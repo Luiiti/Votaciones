@@ -1,0 +1,2265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Junta · Registro y Votación (LPH · mayorías · morosos · por titular)</title>
+  <!-- TailwindCSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- XLSX (leer/escribir Excel) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- jsPDF -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <!-- jsPDF-Autotable (tablas en PDF) -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2"></script>
+  <!-- pdf-lib (fusionar PDFs e incrustar imágenes como anexos) -->
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <!-- QRCode -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+  <style>
+    :root{--rounded:1rem;}
+    .card{background:#fff;border-radius:var(--rounded);box-shadow:0 10px 20px rgba(0,0,0,.06);padding:1.25rem;}
+    .btn{display:inline-flex;align-items:center;gap:.5rem;padding:.5rem 1rem;border-radius:.75rem;font-weight:500;border:1px solid #d1d5db;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,.03);}
+    .btn:hover{background:#f9fafb}
+    .btn-primary{background:#2563eb;border-color:#2563eb;color:#fff}
+    .btn-primary:hover{background:#1d4ed8}
+    .btn-danger{background:#dc2626;border-color:#dc2626;color:#fff}
+    .btn-danger:hover{background:#b91c1c}
+    .btn-ghost{border-color:transparent;background:transparent}
+    .badge{font-size:.75rem;padding:.125rem .5rem;border-radius:999px;background:#f3f4f6;color:#374151;border:1px solid #e5e7eb}
+    .badge-warn{background:#fee2e2;color:#991b1b;border-color:#fecaca}
+    .kpi{font-weight:600;font-size:1.25rem}
+    .muted{color:#6b7280}
+    .table{width:100%;font-size:.9rem}
+    .table th{color:#4b5563;border-bottom:1px solid #e5e7eb;padding:.25rem 0;text-align:left}
+    .table td{border-bottom:1px solid #f3f4f6;padding:.5rem 0}
+    .select{border:1px solid #d1d5db;border-radius:.75rem;padding:.4rem .6rem;background:#fff}
+    .input{border:1px solid #d1d5db;border-radius:.75rem;padding:.45rem .6rem}
+    .modal{display:none}
+    .modal.show{display:flex}
+  </style>
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+</head>
+<body class="bg-gray-50 text-gray-800">
+  <header class="sticky top-0 z-10 bg-white border-b border-gray-200">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 text-white grid place-content-center font-bold">J</div>
+        <div>
+          <h1 class="text-lg font-semibold">Gestor de Votaciones · Comunidad</h1>
+          <p class="text-xs text-gray-500">2ª convocatoria · Doble mayoría (LPH) · Morosos sin voto · Local</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="statusCenso" class="badge">Censo no cargado</span>
+        <button id="btnDescargarBackup" class="btn" title="Exportar copia JSON de trabajo">Guardar copia</button>
+        <button id="btnCargarBackup" class="btn" title="Cargar una copia JSON guardada">Cargar copia</button>
+        <input id="inputCargarBackup" type="file" accept=".json" class="hidden" />
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <!-- 1) Cargar censo y morosos -->
+    <section class="card">
+      <h2 class="text-xl font-semibold mb-3">1) Cargar censo & morosos</h2>
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="space-y-4">
+          <div class="flex items-center gap-3">
+            <input id="inputExcel" type="file" accept=".xlsx,.xls" class="block w-full text-sm file:mr-4 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+            <button id="btnLimpiarCenso" class="btn">Limpiar</button>
+          </div>
+          <p class="text-sm text-gray-600">
+            Cabeceras admitidas · <span class="font-medium">Propiedad</span>: PROPIEDAD / FINCA / PARCELA / UNIDAD / VIVIENDA ·
+            <span class="font-medium">Propietario</span>: PROPIETARIO / TITULAR / DUEÑO / DUENO / NOMBRE ·
+            <span class="font-medium">Coeficiente</span>: COEF / COEFICIENTE / CUOTA / PARTICIP / %.
+          </p>
+          <p class="text-sm text-gray-600">
+            Coeficientes: <code>0,0811</code> (8,11%), <code>8,11%</code>, <code>0,0065%</code>. Si la celda no lleva <code>%</code>, se interpreta como fracción.
+          </p>
+          <div id="censoInfo" class="text-sm bg-gray-50 border border-gray-200 rounded-xl p-3">Cargue <em>censo.xlsx</em>.</div>
+
+          <div class="space-y-2 border-t pt-3">
+            <label class="text-sm font-medium">Importar morosos (.xlsx / .xls / .csv)</label>
+            <div class="flex items-center gap-3">
+              <input id="inputMorosos" type="file" accept=".xlsx,.xls,.csv" class="block w-full text-sm file:mr-4 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100"/>
+              <button id="btnLimpiarMorosos" class="btn">Limpiar morosos</button>
+            </div>
+            <p class="text-xs text-gray-600">Cabecera recomendada: PROPIETARIO / TITULAR / NOMBRE. Se cruza por nombre (sin tildes/mayús.).</p>
+            <div id="morososInfo" class="text-sm bg-rose-50 border border-rose-200 rounded-xl p-3">Sin morosos cargados.</div>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="font-medium">QR de acceso a registro</h3>
+              <p class="text-xs muted">Apunta a esta misma página con <code>?registro=1</code> (solo referencia, sin sincronía).</p>
+            </div>
+            <button id="btnCopiarEnlace" class="btn">Copiar enlace</button>
+          </div>
+          <div id="qrcode" class="w-[180px] h-[180px] bg-white rounded-xl border border-gray-200"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2) Registro -->
+    <section class="card">
+      <h2 class="text-xl font-semibold mb-3">2) Registro</h2>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <!-- Registro por propietario/propiedad -->
+        <div class="space-y-4">
+<!-- ASIGNAR REPRESENTANTE A VARIOS -->
+<div class="p-3 rounded-xl border border-gray-200 bg-gray-50">
+  <button id="btnAbrirAsignarRep" class="btn w-full">Asignar REPRESENTANTE a varios…</button>
+  <p class="text-xs text-gray-600 mt-1">
+    Selecciona varios titulares y asígnales un representante en un solo paso.
+  </p>
+</div>
+<!-- BOTÓN: marcar todo el censo como presente -->
+<div class="p-3 rounded-xl border border-gray-200 bg-gray-50">
+  <button id="btnMarcarTodosPresentes" class="btn btn-primary w-full">
+    Marcar TODO el censo como presente
+  </button>
+  <p class="text-xs text-gray-600 mt-1">
+    Añade como <strong>presentes</strong> a todos los titulares del censo. Los
+    <em>morosos</em> aparecerán como presentes pero <strong>sin derecho a voto</strong>.
+  </p>
+</div>
+
+          <div class="space-y-2">
+            <label class="text-sm font-medium">Registrar por propietario</label>
+            <div class="flex gap-2">
+              <select id="selectPropietario" class="select w-full"></select>
+            </div>
+            <div class="flex flex-col gap-2">
+              <div class="flex gap-2">
+                <button id="btnAddPresentePropietario" class="btn">Presente</button>
+                <div class="flex gap-2 items-center">
+                  <input id="inputRepresentante" type="text" placeholder="Nombre del representante" class="input"/>
+                  <button id="btnAddRepresentadoPropietario" class="btn">Representado</button>
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <button id="btnAddPresentePropietarioNoVoto" class="btn text-rose-700 border-rose-300">Presente sin voto</button>
+                <div class="flex gap-2 items-center">
+                  <input id="inputRepresentanteNoVoto" type="text" placeholder="Nombre del representante (sin voto)" class="input"/>
+                  <button id="btnAddRepresentadoPropietarioNoVoto" class="btn text-rose-700 border-rose-300">Representado sin voto</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <label class="text-sm font-medium">Registrar por propiedad</label>
+            <div class="flex gap-2">
+              <input id="inputPropiedad" type="text" placeholder="ID de propiedad" class="input w-full"/>
+              <select id="selectAsistenciaPropiedad" class="select">
+                <option value="presente">Presente</option>
+                <option value="representado">Representado</option>
+                <option value="presente_sinvoto">Presente sin voto</option>
+                <option value="representado_sinvoto">Representado sin voto</option>
+              </select>
+            </div>
+            <div class="flex gap-2">
+              <input id="inputRepPropiedad" type="text" placeholder="Nombre del representante (si procede)" class="input w-full"/>
+              <button id="btnAddPropiedad" class="btn">Registrar</button>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <label class="text-sm font-medium">Añadir representante no censado</label>
+            <div class="flex gap-2">
+              <input id="inputRepNoCensado" type="text" placeholder="Nombre" class="input w-full"/>
+              <button id="btnAddRepNoCensado" class="btn">Añadir como presente</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Listas -->
+        <div class="grid grid-cols-2 gap-4">
+          <div class="border border-gray-200 rounded-xl p-3">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-semibold">Presentes</h3>
+            </div>
+            <ul id="listaPresentes" class="space-y-2 text-sm"></ul>
+          </div>
+          <div class="border border-gray-200 rounded-xl p-3">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-semibold">Representados</h3>
+            </div>
+            <ul id="listaRepresentados" class="space-y-2 text-sm"></ul>
+          </div>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mt-3">Prioridad: si un <strong>propietario representado</strong> se registra como <strong>presente</strong>, prima el titular presente y se <em>revoca su representación</em>.</p>
+      <p class="text-xs text-rose-700 mt-1">Los marcados como <strong>sin voto</strong> figuran como presentes pero <strong>no computan</strong> ni votos LPH ni coeficiente en la votación.</p>
+    </section>
+
+    <!-- 3) Totales / Quórum -->
+    <section class="card">
+      <h2 class="text-xl font-semibold mb-2">3) Totales (quórum · 2ª convocatoria)</h2>
+      <div class="grid md:grid-cols-4 gap-4">
+        <div class="p-4 rounded-xl border border-gray-200 bg-gray-50">
+          <div class="muted text-xs mb-1">Presentes</div>
+          <div class="kpi"><span id="kpiPresProps">0</span> props · <span id="kpiPresCoef">0.000000</span> (<span id="kpiPresPct">0.00</span>%)</div>
+        </div>
+        <div class="p-4 rounded-xl border border-gray-200 bg-gray-50">
+          <div class="muted text-xs mb-1">Representados</div>
+          <div class="kpi"><span id="kpiRepProps">0</span> props · <span id="kpiRepCoef">0.000000</span> (<span id="kpiRepPct">0.00</span>%)</div>
+        </div>
+        <div class="p-4 rounded-xl border border-gray-200 bg-gray-50">
+          <div class="muted text-xs mb-1">Total en la Junta</div>
+          <div class="kpi"><span id="kpiTotProps">0</span> props · <span id="kpiTotCoef">0.000000</span> (<span id="kpiTotPct">0.00</span>%)</div>
+          <div class="text-xs mt-1"><span class="font-medium">Votos necesarios (mayoría simple por coef.):</span> &gt; <span id="kpiMayorCoef">0.000000</span> coef.</div>
+        </div>
+        <div class="p-4 rounded-xl border border-gray-200 bg-gray-50">
+          <div class="muted text-xs mb-1">Votos LPH en la Junta (elegibles)</div>
+          <div class="kpi"><span id="kpiVotesLPH">0</span> votos</div>
+          <div class="text-xs text-gray-500">1 voto por titular elegible (presente o representado). Los morosos no cuentan.</div>
+        </div>
+      </div>
+<!-- Bloque adicional: sin voto y asistencia total (con o sin voto) -->
+<div class="grid md:grid-cols-3 gap-4 mt-4">
+  <!-- Presentes SIN voto -->
+  <div class="p-4 rounded-xl border border-gray-200 bg-gray-50">
+    <div class="muted text-xs mb-1">Presentes (sin voto)</div>
+    <div class="kpi">
+      <span id="kpiPresSinProps">0</span> props ·
+      <span id="kpiPresSinCoef">0.000000</span>
+      (<span id="kpiPresSinPct">0.00</span>%)
+    </div>
+  </div>
+
+  <!-- Representados SIN voto -->
+  <div class="p-4 rounded-xl border border-gray-200 bg-gray-50">
+    <div class="muted text-xs mb-1">Representados (sin voto)</div>
+    <div class="kpi">
+      <span id="kpiRepSinProps">0</span> props ·
+      <span id="kpiRepSinCoef">0.000000</span>
+      (<span id="kpiRepSinPct">0.00</span>%)
+    </div>
+  </div>
+
+  <!-- Total asistencia (con o sin voto) -->
+  <div class="p-4 rounded-xl border border-gray-200 bg-gray-50">
+    <div class="muted text-xs mb-1">Total asistencia (con o sin voto)</div>
+    <div class="kpi">
+      <span id="kpiTotAllProps">0</span> props ·
+      <span id="kpiTotAllCoef">0.000000</span>
+      (<span id="kpiTotAllPct">0.00</span>%)
+    </div>
+    <div class="text-xs text-gray-600 mt-1">
+      Incluye presentes y representados con o sin derecho a voto.
+    </div>
+  </div>
+</div>
+
+      <div class="flex items-center gap-2 mt-4">
+        <button id="btnIniciarVotacion" class="btn-primary btn">Iniciar votación (bloquear registro)</button>
+        <span id="msgBloqueo" class="text-sm text-gray-600"></span>
+      </div>
+    </section>
+
+    <!-- 3.5) Configurar puntos (dinámico) -->
+    <section class="card" id="configPuntos">
+      <h2 class="text-xl font-semibold mb-2">4) Configurar puntos a votar</h2>
+      <p class="text-sm text-gray-600 mb-3">Defina el título y el <strong>tipo de mayoría</strong> requerida. Se bloquearán al iniciar la votación.</p>
+      <div class="space-y-3">
+        <ul id="listaPuntos" class="space-y-2"></ul>
+        <div class="grid md:grid-cols-6 gap-2">
+          <div class="md:col-span-4">
+            <input id="inputNuevoPunto" type="text" placeholder="Título del nuevo punto de la orden del día" class="input w-full"/>
+          </div>
+          <div>
+            <select id="selectNuevoTipo" class="select w-full">
+              <option value="simple">Mayoría simple (>50%)</option>
+              <option value="3/5">Mayoría cualificada (≥ 3/5)</option>
+              <option value="2/3">Mayoría cualificada (≥ 2/3)</option>
+              <option value="unanimidad">Unanimidad (100%)</option>
+            </select>
+          </div>
+          <div><button id="btnAddPunto" class="btn w-full">Añadir punto</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4) Votación (puntos) -->
+    <section class="space-y-4" id="seccionVotacion"></section>
+
+    <!-- 5) Resumen y exportación -->
+    <section class="card">
+      <h2 class="text-xl font-semibold mb-3">5) Resumen y exportación</h2>
+      <div id="resumenTabla" class="overflow-x-auto mb-4"></div>
+      <div class="flex flex-wrap gap-2 items-center">
+        <input id="inputLogo" type="file" accept="image/*" class="text-sm file:mr-4 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+        <input id="inputAnexos" type="file" multiple accept=".pdf,image/*" class="text-sm file:mr-4 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100" />
+        <button id="btnExportExcelTitulares" class="btn">Excel (votos por titular)</button>
+        <button id="btnExportPDF" class="btn">PDF acta (formato profesional)</button>
+        <span class="text-xs text-gray-500">Cargue anexos (PDF/imagen) si desea adjuntarlos al acta.</span>
+      </div>
+      <div id="listaAnexos" class="text-sm text-gray-700 mt-2">Sin anexos.</div>
+    </section>
+  </main>
+
+  <!-- Modal: Datos de la Junta para el PDF -->
+  <div id="pdfMetaModal" class="modal fixed inset-0 bg-black/40 items-center justify-center p-4">
+    <div class="bg-white rounded-2xl w-full max-w-2xl p-5">
+      <div class="flex items-start justify-between">
+        <h3 class="text-lg font-semibold">Datos de la Junta para el acta</h3>
+        <button id="btnCloseMeta" class="btn btn-ghost">✖</button>
+      </div>
+      <div class="grid md:grid-cols-2 gap-3 mt-3">
+        <div class="space-y-2">
+          <label class="text-sm font-medium">Nombre de la comunidad</label>
+          <input id="metaComunidad" type="text" class="input w-full" placeholder="Ej.: Comunidad San Roque Club"/>
+        </div>
+        <div class="space-y-2">
+          <label class="text-sm font-medium">Presidente/a</label>
+          <input id="metaPresidente" type="text" class="input w-full" placeholder="Nombre y apellidos"/>
+        </div>
+        <div class="space-y-2 md:col-span-2">
+          <label class="text-sm font-medium">Junta directiva (si la hay)</label>
+          <textarea id="metaJunta" class="input w-full" rows="2" placeholder="Ej.: Vicepresidente: Ana Pérez; Vocal: Juan Ruiz…"></textarea>
+        </div>
+        <div class="space-y-2 md:col-span-2">
+          <label class="text-sm font-medium">Secretario/a — Administrador/a</label>
+          <input id="metaSecretario" type="text" class="input w-full" placeholder="Nombre y apellidos"/>
+        </div>
+        <div class="space-y-2">
+          <label class="text-sm font-medium">Lugar de celebración</label>
+          <input id="metaLugar" type="text" class="input w-full" placeholder="Ej.: Sede social, Sala 2"/>
+        </div>
+        <div class="space-y-2">
+          <label class="text-sm font-medium">Fecha</label>
+          <input id="metaFecha" type="date" class="input w-full"/>
+        </div>
+        <div class="space-y-2">
+          <label class="text-sm font-medium">Hora</label>
+          <input id="metaHora" type="time" class="input w-full"/>
+        </div>
+      </div>
+      <div class="flex items-center justify-between mt-4">
+        <label class="text-sm flex items-center gap-2">
+          <input id="metaRemember" type="checkbox" class="rounded"/>
+          Recordar estos datos en esta sesión
+        </label>
+        <div class="flex gap-2">
+          <button id="btnCancelMeta" class="btn">Cancelar</button>
+          <button id="btnConfirmMeta" class="btn btn-primary">Generar PDF</button>
+        </div>
+      </div>
+    </div>
+  </div>
+<!-- Modal: Asignar REPRESENTANTE a varios -->
+<div id="asignarRepModal" class="modal fixed inset-0 bg-black/40 items-center justify-center p-4 hidden">
+  <div class="bg-white rounded-2xl w-full max-w-3xl p-5">
+    <div class="flex items-start justify-between">
+      <h3 class="text-lg font-semibold">Asignar REPRESENTANTE</h3>
+      <button id="btnCloseAsignarRep" class="btn btn-ghost">✖</button>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-4 mt-3">
+      <!-- Columna izquierda: Datos -->
+      <div class="md:col-span-1 space-y-3">
+        <div class="space-y-1">
+          <label class="text-sm font-medium">Nombre del representante</label>
+          <input id="asigRepNombre" type="text" class="input w-full" placeholder="Ej.: Juan Pérez"/>
+          <p class="text-xs text-gray-500">Si el representante no está presente, se añade como tal automáticamente.</p>
+
+          <!-- NUEVO: mostrar solo no asignados al representante escrito -->
+          <label class="text-sm flex items-center gap-2 mt-1">
+            <input id="asigRepSoloNoAsignados" type="checkbox" class="rounded"/>
+            Mostrar solo no asignados a este representante
+          </label>
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-sm font-medium">Opciones</label>
+          <label class="text-sm flex items-center gap-2">
+            <input id="asigRepReemplazar" type="checkbox" class="rounded" checked/>
+            Reemplazar representación existente (si la hay)
+          </label>
+          <label class="text-sm flex items-center gap-2">
+            <input id="asigRepIncluirMorosos" type="checkbox" class="rounded"/>
+            Incluir morosos (sin voto)
+          </label>
+        </div>
+
+        <div class="space-y-1">
+          <label class="text-sm font-medium">Buscar propietarios</label>
+          <input id="asigRepFiltro" type="text" class="input w-full" placeholder="Filtrar por nombre…"/>
+        </div>
+      </div>
+
+      <!-- Columna derecha: Lista con checks -->
+      <div class="md:col-span-2">
+        <div class="text-xs text-gray-500 mb-2">
+          Selecciona propietarios <span class="font-medium">no presentes</span>. Si ya están representados, puedes reemplazar su representante.
+        </div>
+        <div id="asigRepLista" class="border border-gray-200 rounded-xl p-3 max-h-96 overflow-auto bg-gray-50">
+          <!-- Se llena por JS -->
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-2 mt-4">
+      <button id="btnCancelAsignarRep" class="btn">Cancelar</button>
+      <button id="btnConfirmAsignarRep" class="btn btn-primary">Asignar a seleccionados</button>
+    </div>
+  </div>
+</div>
+
+  <footer class="max-w-6xl mx-auto px-4 py-6 text-xs text-gray-500">
+    Hecho con ♥ · HTML + JS vanilla · Tailwind · XLSX · jsPDF · AutoTable (plain) · PDF-Lib · QRCode. — <span id="footInfo"></span>
+ <!-- Modal: Seleccionar convocatoria -->
+<div id="convocatoriaModal" class="modal fixed inset-0 bg-black/40 items-center justify-center p-4 hidden">
+  <div class="bg-white rounded-2xl w-full max-w-md p-5">
+    <div class="flex items-start justify-between">
+      <h3 class="text-lg font-semibold">Convocatoria de la Junta</h3>
+      <button id="btnCloseConvocatoria" class="btn btn-ghost">✖</button>
+    </div>
+    <p class="text-sm text-gray-600 mt-2">
+      Indica si la reunión se celebra en <b>primera</b> o <b>segunda</b> convocatoria.
+    </p>
+
+    <div class="mt-4 space-y-2">
+      <label class="flex items-center gap-2">
+        <input type="radio" name="convSel" value="primera" checked>
+        <span>Primera convocatoria</span>
+      </label>
+      <div class="text-xs text-gray-500 ml-6">
+        Requiere quórum de constitución: mayoría de propietarios y coeficientes del censo.
+      </div>
+
+      <label class="flex items-center gap-2 mt-2">
+        <input type="radio" name="convSel" value="segunda">
+        <span>Segunda convocatoria</span>
+      </label>
+      <div class="text-xs text-gray-500 ml-6">
+        Sin quórum mínimo: se constituye con los asistentes (presentes y representados).
+      </div>
+    </div>
+
+    <div id="convocatoriaWarn" class="text-sm text-rose-700 mt-3 hidden"></div>
+
+    <div class="flex items-center justify-end gap-2 mt-5">
+      <button id="btnCancelConvocatoria" class="btn">Cancelar</button>
+      <button id="btnConfirmConvocatoria" class="btn btn-primary">Continuar</button>
+    </div>
+  </div>
+</div>
+
+ </footer>
+
+<script>
+// ========= Utilidades
+const fmtCoef = (n) => (isFinite(n) ? n.toFixed(6) : '0.000000');
+const fmtPct  = (n) => (isFinite(n) ? (n*100).toFixed(2) : '0.00'); // n en [0..1]
+const norm = (s)=> String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+// Suma coeficiente TOTAL del censo
+function coefCensoTotal(){
+  let total = 0;
+  for (const [owner, arr] of ownerMap.entries()){
+    for (const pr of arr){ total += (pr.coef || 0); }
+  }
+  return total;
+}
+
+// Conjunto de propietarios presentes o representados (para constitución)
+function setOwnersConcurren(){
+  const set = new Set(presentOwners);
+  for (const [owner, rep] of ownerToRep.entries()){ set.add(owner); }
+  return set;
+}
+
+// Coeficiente total de los que concurren (para constitución). NO excluimos morosos: constitución ≠ derecho de voto
+function coefConcurren(){
+  let total = 0;
+  const presentes = setOwnersConcurren();
+  for (const owner of presentes){
+    const arr = ownerMap.get(owner) || [];
+    for (const pr of arr){ total += (pr.coef || 0); }
+  }
+  return total;
+}
+
+// Verifica quórum de PRIMERA convocatoria: mayoría de propietarios y mayoría de coeficientes del censo total
+function checkQuorumPrimera(){
+  const ownersTot = ownerMap.size;
+  const ownersConc = setOwnersConcurren().size;
+
+  const coefTot = coefCensoTotal();
+  const coefConc = coefConcurren();
+
+  const okOwners = ownersConc >= Math.floor(ownersTot/2) + 1; // mayoría simple de propietarios
+  const okCoef   = coefConc >= (coefTot / 2 + 1e-12);         // mayoría de cuotas (>= 50%)
+
+  return {
+    ok: (okOwners && okCoef),
+    ownersConc, ownersTot,
+    coefConc, coefTot
+  };
+}
+
+function limpiarCoef(valorCrudo){
+  if (valorCrudo == null) return null;
+  let str = String(valorCrudo).trim();
+  if (str === '') return null;
+  let hadPercent = false;
+  if (str.includes('%')) { hadPercent = true; str = str.replace('%',''); }
+  if (typeof valorCrudo === 'number') {
+    let num = valorCrudo;
+    if (hadPercent) num = num / 100;
+    return isFinite(num) && num > 0 ? num : null;
+  }
+  const lastComma = str.lastIndexOf(','), lastDot = str.lastIndexOf('.');
+  let decimalPos = Math.max(lastComma, lastDot);
+  if (decimalPos > -1) {
+    let intPart = str.slice(0, decimalPos).replace(/[.,\s]/g, '');
+    let decPart = str.slice(decimalPos+1).replace(/[.,\s]/g, '');
+    str = intPart + '.' + decPart;
+  } else {
+    str = str.replace(/[.,\s]/g, '');
+  }
+  let num = parseFloat(str);
+  if (!isFinite(num)) return null;
+  if (hadPercent) num = num / 100;
+  return num > 0 ? num : null;
+}
+// ======= Convocatoria (global)
+const CONVOCATORIA = { PRIMERA: 'primera', SEGUNDA: 'segunda' };
+let convocatoriaActual = CONVOCATORIA.SEGUNDA; // valor por defecto
+
+// ========= Estado
+let censo = []; // {propiedad_id, propietario, coef}
+let propIndex = new Map(); // propiedad_id -> row censo
+let totalCoefTitulo = 0, hojasLeidas = 0;
+let ownerMap = new Map(); // propietario -> [{propiedad_id, coef}]
+let ownerNormIndex = new Map(); // normName -> [ownerNames reales]
+
+let presentOwners = new Set(); // propietarios presentes
+let presentReps   = new Set(); // representantes presentes (sin propiedades propias)
+let repToOwners = new Map();   // rep -> Set(owner)
+let ownerToRep = new Map();    // owner -> rep
+let noVoteOwners = new Set();  // titulares sin derecho a voto (morosos)
+let registroBloqueado = false;
+
+// Agenda dinámica con tipo de mayoría
+let agenda = []; // {id, titulo, majority, bloqueado, resultados}
+let puntoAutoId = 1;
+
+// Asignación y votos
+let propToAgent = new Map(); // propiedad_id -> agente (owner o representante)
+let puntoVotosPorProp = new Map(); // puntoId -> Map(propiedad_id -> 'si'|'no'|'abs')
+
+// LOGO (meta con tamaño real + tipo)
+let logoMeta = { dataUrl: null, w: 0, h: 0, type: 'PNG' };
+
+// Anexos
+let anexos = []; // [{file:File, name:string, kind:'pdf'|'image'}]
+
+// ========= DOM helpers
+const $ = (id)=>document.getElementById(id);
+const html = (s,...v)=>String.raw({raw:s},...v);
+
+// ========= Inicio
+function init(){
+  actualizarSelectPropietarios();
+  generarQR();
+
+  // puntos demo
+  addPunto('Aprobación del balance 2024 (no presentado en la AGM de febrero 2025).', 'simple');
+  addPunto('Remuneración del personal administrativo.', 'simple');
+  renderListaPuntos();
+
+// Modal convocatoria
+$('btnCloseConvocatoria').addEventListener('click', closeConvocatoriaModal);
+$('btnCancelConvocatoria').addEventListener('click', closeConvocatoriaModal);
+$('btnConfirmConvocatoria').addEventListener('click', confirmarConvocatoriaYComenzar);
+// Cerrar con ESC
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeConvocatoriaModal(); });
+
+  // Backup
+  $('btnDescargarBackup').addEventListener('click', exportBackupJSON);
+  $('btnCargarBackup').addEventListener('click', ()=>$('inputCargarBackup').click());
+  $('inputCargarBackup').addEventListener('change', importBackupJSON);
+
+  $('inputExcel').addEventListener('change', onExcelChosen);
+  $('btnLimpiarCenso').addEventListener('click', limpiarCenso);
+  $('btnCopiarEnlace').addEventListener('click', copiarEnlaceRegistro);
+
+  $('inputMorosos').addEventListener('change', onMorososChosen);
+  $('btnLimpiarMorosos').addEventListener('click', limpiarMorosos);
+
+  $('btnAddPresentePropietario').addEventListener('click', ()=>{
+    const o = $('selectPropietario').value; if (o) addPresenteOwner(o);
+  });
+  $('btnAddRepresentadoPropietario').addEventListener('click', ()=>{
+    const o = $('selectPropietario').value, r = $('inputRepresentante').value.trim();
+    if (o && r) addRepresentacion(r, o);
+  });
+  $('btnAddPresentePropietarioNoVoto').addEventListener('click', ()=>{
+    const o = $('selectPropietario').value; if (o){ noVoteOwners.add(o); addPresenteOwner(o); }
+  });
+  $('btnAddRepresentadoPropietarioNoVoto').addEventListener('click', ()=>{
+    const o = $('selectPropietario').value, r = $('inputRepresentanteNoVoto').value.trim();
+    if (o && r){ noVoteOwners.add(o); addRepresentacion(r, o); }
+  });
+
+  $('btnAddPropiedad').addEventListener('click', ()=>{
+    const propId = $('inputPropiedad').value.trim();
+    const modo   = $('selectAsistenciaPropiedad').value;
+    const rep    = $('inputRepPropiedad').value.trim();
+    if (!propId) return;
+    const row = propIndex.get(propId) || censo.find(r => String(r.propiedad_id).toLowerCase() === propId.toLowerCase());
+    if (!row){ alert('Propiedad no encontrada en el censo.'); return; }
+    if (modo==='presente') addPresenteOwner(row.propietario);
+    else if (modo==='representado'){ if (!rep){ alert('Indique un representante.'); return; } addRepresentacion(rep, row.propietario); }
+    else if (modo==='presente_sinvoto'){ noVoteOwners.add(row.propietario); addPresenteOwner(row.propietario); }
+    else if (modo==='representado_sinvoto'){ if (!rep){ alert('Indique un representante.'); return; } noVoteOwners.add(row.propietario); addRepresentacion(rep, row.propietario); }
+  });
+  $('btnAddRepNoCensado').addEventListener('click', ()=>{
+    const rep = $('inputRepNoCensado').value.trim(); if(!rep) return;
+    presentReps.add(rep); renderListasRegistro();
+    $('inputRepNoCensado').value='';
+  });
+// Botón "Marcar TODO el censo como presente"
+const btnTodos = $('btnMarcarTodosPresentes');
+if (btnTodos){
+  btnTodos.addEventListener('click', marcarTodoCensoComoPresente);
+}
+
+  $('btnIniciarVotacion').addEventListener('click', openConvocatoriaModal);
+
+
+  $('btnAddPunto').addEventListener('click', ()=>{
+    const t = $('inputNuevoPunto').value.trim();
+    const m = $('selectNuevoTipo').value;
+    if (!t) return; addPunto(t, m); $('inputNuevoPunto').value=''; renderListaPuntos();
+  });
+
+  $('inputLogo').addEventListener('change', onLogoChosen);
+  $('btnExportExcelTitulares').addEventListener('click', exportExcelVotosTitulares);
+
+  // PDF acta: abrir modal de metadatos
+  $('btnExportPDF').addEventListener('click', openPDFMetaModal);
+
+  // Anexos
+  $('inputAnexos').addEventListener('change', onAnexosChosen);
+
+  // Modal handlers
+  $('btnCloseMeta').addEventListener('click', closePDFMetaModal);
+  $('btnCancelMeta').addEventListener('click', closePDFMetaModal);
+  $('btnConfirmMeta').addEventListener('click', onConfirmPDFMeta);
+// Abrir / cerrar modal Asignar Representante
+$('btnAbrirAsignarRep').addEventListener('click', openAsignarRepModal);
+$('btnCloseAsignarRep').addEventListener('click', closeAsignarRepModal);
+$('btnCancelAsignarRep').addEventListener('click', closeAsignarRepModal);
+$('btnConfirmAsignarRep').addEventListener('click', confirmarAsignarRep);
+
+// Filtros dinámicos en el modal
+$('asigRepFiltro').addEventListener('input', renderAsignarRepLista);
+$('asigRepIncluirMorosos').addEventListener('change', renderAsignarRepLista);
+$('asigRepSoloNoAsignados').addEventListener('change', renderAsignarRepLista);
+$('asigRepNombre').addEventListener('input', renderAsignarRepLista);
+
+// Cerrar con ESC
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeAsignarRepModal(); });
+
+
+  document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closePDFMetaModal(); });
+
+  const url = new URL(window.location.href);
+  $('footInfo').textContent = `URL base: ${url.origin}${url.pathname}`;
+
+  if (new URLSearchParams(window.location.search).get('registro')==='1'){
+    setTimeout(()=>document.querySelector('section.card:nth-of-type(2)')?.scrollIntoView({behavior:'smooth'}),200);
+  }
+
+  // Prefill modal desde sessionStorage (si existe)
+  prefillMetaFromSession();
+}
+
+// ========= QR
+function generarQR(){
+  const base = window.location.href.split('?')[0];
+  const enlace = `${base}?registro=1`;
+  $('qrcode').innerHTML='';
+  new QRCode($('qrcode'), {text: enlace, width:180, height:180});
+}
+function copiarEnlaceRegistro(){
+  const base = window.location.href.split('?')[0];
+  const enlace = `${base}?registro=1`;
+  navigator.clipboard.writeText(enlace).then(()=>alert('Enlace copiado: '+enlace));
+}
+
+// ========= Excel (censo)
+async function onExcelChosen(ev){
+  const file = ev.target.files?.[0]; if(!file) return;
+  const data = await file.arrayBuffer();
+  const wb = XLSX.read(data, {type:'array'});
+
+  censo = []; hojasLeidas = 0; propIndex.clear();
+  const KEY_PROP = ['PROPIEDAD','FINCA','PARCELA','UNIDAD','VIVIENDA'];
+  const KEY_OWNER= ['PROPIETARIO','TITULAR','DUEÑO','DUENO','NOMBRE'];
+  const KEY_COEF = ['COEF','COEFICIENTE','CUOTA','PARTICIP','%'];
+
+  for (const sh of wb.SheetNames){
+    const ws = wb.Sheets[sh]; if(!ws) continue;
+    const arr = XLSX.utils.sheet_to_json(ws, {header:1, raw:true}); if(!arr?.length) continue;
+    hojasLeidas++;
+    let headerRow = arr.findIndex(row => Array.isArray(row) && row.some(v => v!=null && String(v).trim()!==''));
+    if (headerRow === -1) continue;
+    const headers = (arr[headerRow]||[]).map(v=>String(v||'').trim().toUpperCase());
+    const findIdx = keys => { let i=-1; headers.forEach((h,idx)=>{ for(const k of keys){ if(h.includes(k)) i=idx; } }); return i; };
+    const idxProp  = findIdx(KEY_PROP);
+    const idxOwner = findIdx(KEY_OWNER);
+    const idxCoef  = findIdx(KEY_COEF);
+    if (idxProp===-1 || idxOwner===-1 || idxCoef===-1) continue;
+    for (let r=headerRow+1;r<arr.length;r++){
+      const row = arr[r]||[];
+      const propiedad_id = row[idxProp];
+      const propietario  = row[idxOwner];
+      const coefRaw      = row[idxCoef];
+      if (propiedad_id==null || propietario==null || coefRaw==null) continue;
+      const coef = limpiarCoef(coefRaw);
+      if (coef==null || coef<=0) continue;
+      const rec={propiedad_id:String(propiedad_id).trim(), propietario:String(propietario).trim(), coef};
+      censo.push(rec);
+      propIndex.set(rec.propiedad_id, rec);
+    }
+  }
+  if (!censo.length){
+    $('statusCenso').textContent='Censo no válido';
+    $('statusCenso').className='badge';
+    $('censoInfo').innerHTML='No se hallaron filas válidas. Use cabeceras PROPIEDAD/PROPIETARIO/COEFICIENTE y coeficientes numéricos (acepta %).';
+    return;
+  }
+  ownerMap = new Map(); totalCoefTitulo = 0;
+  for (const r of censo){
+    totalCoefTitulo += r.coef;
+    if (!ownerMap.has(r.propietario)) ownerMap.set(r.propietario, []);
+    ownerMap.get(r.propietario).push({propiedad_id:r.propiedad_id, coef:r.coef});
+  }
+  rebuildOwnerNormIndex();
+
+  $('statusCenso').textContent='Censo cargado';
+  $('statusCenso').className='badge';
+  $('censoInfo').innerHTML = `Censo cargado: <strong>${censo.length}</strong> propiedades · coeficiente total: <strong>${fmtCoef(totalCoefTitulo)}</strong> · hojas leídas: <strong>${hojasLeidas}</strong>.`;
+  actualizarSelectPropietarios(); recalcularKPIs();
+}
+
+function rebuildOwnerNormIndex(){
+  ownerNormIndex = new Map();
+  for (const owner of ownerMap.keys()){
+    const k = norm(owner);
+    if (!ownerNormIndex.has(k)) ownerNormIndex.set(k, []);
+    ownerNormIndex.get(k).push(owner);
+  }
+}
+
+function limpiarCenso(){
+  censo=[]; ownerMap.clear(); propIndex.clear(); totalCoefTitulo=0; hojasLeidas=0;
+  ownerNormIndex.clear();
+  presentOwners.clear(); presentReps.clear(); repToOwners.clear(); ownerToRep.clear();
+  noVoteOwners.clear();
+  registroBloqueado=false;
+  propToAgent.clear(); puntoVotosPorProp.clear();
+  $('statusCenso').textContent='Censo no cargado'; $('censoInfo').innerHTML='Cargue censo.xlsx';
+  $('morososInfo').innerHTML='Sin morosos cargados.';
+  actualizarSelectPropietarios(); renderListasRegistro(); recalcularKPIs();
+  $('seccionVotacion').innerHTML=''; $('resumenTabla').innerHTML=''; $('msgBloqueo').textContent='';
+  $('configPuntos').classList.remove('hidden');
+}
+
+// ========= Morosos
+async function onMorososChosen(ev){
+  const f = ev.target.files?.[0]; if(!f) return;
+  try{
+    const data = await f.arrayBuffer();
+    const wb = XLSX.read(data, {type:'array'});
+    const KEY_OWNER= ['PROPIETARIO','TITULAR','NOMBRE','DUENO','DUEÑO'];
+
+    let encontrados = new Set();
+    let filas = 0;
+
+    for (const sh of wb.SheetNames){
+      const ws = wb.Sheets[sh]; if(!ws) continue;
+      const arr = XLSX.utils.sheet_to_json(ws, {header:1, raw:true}); if(!arr?.length) continue;
+      let headerRow = arr.findIndex(row => Array.isArray(row) && row.some(v => v!=null && String(v).trim()!==''));
+      if (headerRow === -1) continue;
+      const headers = (arr[headerRow]||[]).map(v=>String(v||'').trim().toUpperCase());
+      const findIdx = keys => { let i=-1; headers.forEach((h,idx)=>{ for(const k of keys){ if(h.includes(k)) i=idx; } }); return i; };
+      const idxOwner = findIdx(KEY_OWNER);
+      if (idxOwner===-1) continue;
+      for (let r=headerRow+1;r<arr.length;r++){
+        const row = arr[r]||[]; const name = row[idxOwner]; if (!name) continue; filas++;
+        const k = norm(name);
+        const matches = ownerNormIndex.get(k)||[];
+        if (matches.length){
+          for (const realName of matches){ noVoteOwners.add(realName); encontrados.add(realName); }
+        }
+      }
+    }
+    const nFound = encontrados.size;
+    $('morososInfo').innerHTML = `Morosos cargados: <strong>${nFound}</strong> titulares coincidentes (de ${filas} filas leídas).`;
+    renderListasRegistro(); recalcularKPIs();
+  }catch(e){
+    $('morososInfo').innerHTML = 'No se pudo leer el archivo de morosos.';
+  }
+}
+function limpiarMorosos(){
+  noVoteOwners.clear();
+  $('morososInfo').innerHTML='Sin morosos cargados.';
+  renderListasRegistro(); recalcularKPIs();
+}
+
+// ========= Registro
+function actualizarSelectPropietarios(){
+  const sel = $('selectPropietario'); sel.innerHTML='';
+  const opt = document.createElement('option'); opt.value=''; opt.textContent = censo.length?'Seleccione propietario…':'Cargue censo primero'; sel.appendChild(opt);
+  const owners = Array.from(ownerMap.keys()).sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));
+  for (const o of owners){ const op=document.createElement('option'); op.value=o; op.textContent=o; sel.appendChild(op);
+ // ===== Convocatoria (LPH)
+const CONVOCATORIA = { PRIMERA: 'primera', SEGUNDA: 'segunda' };
+let convocatoriaActual = null; // 'primera' | 'segunda'
+}
+// Selección persistente en el modal "Asignar REPRESENTANTE a varios"
+let asigRepSelected = new Set();
+
+}
+function addPresenteOwner(owner){
+  if (!ownerMap.has(owner)){ alert('Propietario no existe en censo.'); return; }
+  presentOwners.add(owner);
+  if (ownerToRep.has(owner)){ const rep=ownerToRep.get(owner); ownerToRep.delete(owner); const set=repToOwners.get(rep); if(set){ set.delete(owner); if(!set.size) repToOwners.delete(rep);} }
+  renderListasRegistro(); recalcularKPIs();
+}
+function addRepresentacion(rep, owner){
+  if (!ownerMap.has(owner)){ alert('Propietario no existe en censo.'); return; }
+  if (presentOwners.has(owner)){ alert('El propietario está presente. Prima el titular; se ignora la representación.'); return; }
+  presentReps.add(rep);
+  ownerToRep.set(owner, rep);
+  if (!repToOwners.has(rep)) repToOwners.set(rep, new Set());
+  repToOwners.get(rep).add(owner);
+  renderListasRegistro(); recalcularKPIs();
+}
+// Establece representación garantizando eliminar la anterior si existe (sin residuos)
+function setRepresentacion(rep, owner){
+  if (ownerToRep.has(owner)){
+    const old = ownerToRep.get(owner);
+    if (old !== rep && repToOwners.has(old)){
+      const set = repToOwners.get(old);
+      set.delete(owner);
+      if (!set.size) repToOwners.delete(old);
+    }
+  }
+  addRepresentacion(rep, owner);
+}
+
+function removePresente(name){
+  if (presentOwners.has(name)) presentOwners.delete(name);
+  if (presentReps.has(name)) presentReps.delete(name);
+  renderListasRegistro(); recalcularKPIs();
+}
+function removeDelegacion(rep, owner){
+  const set = repToOwners.get(rep); if(set){ set.delete(owner); if(!set.size) repToOwners.delete(rep); }
+  ownerToRep.delete(owner); renderListasRegistro(); recalcularKPIs();
+}
+// === Marcar todo el censo como presente (respeta bloqueo y limpia delegaciones)
+function marcarTodoCensoComoPresente(){
+  if (!censo.length){ alert('Cargue el censo primero.'); return; }
+  if (registroBloqueado){ alert('El registro está bloqueado.'); return; }
+
+  if (!confirm('Esto marcará como PRESENTES a TODOS los titulares del censo.\nSe eliminarán delegaciones de quienes pasen a estar presentes.\n¿Continuar?')) {
+    return;
+  }
+
+  // 1) Marcar todos los propietarios como presentes
+  for (const owner of ownerMap.keys()){
+    presentOwners.add(owner);
+  }
+
+  // 2) Eliminar delegaciones de quienes ahora están presentes (prima el titular)
+  for (const owner of ownerMap.keys()){
+    if (ownerToRep.has(owner)){
+      const rep = ownerToRep.get(owner);
+      ownerToRep.delete(owner);
+      const set = repToOwners.get(rep);
+      if (set){ set.delete(owner); if(!set.size) repToOwners.delete(rep); }
+    }
+  }
+
+  // 3) Refrescar UI y KPIs
+  renderListasRegistro();
+  recalcularKPIs();
+}
+function renderListasRegistro(){
+  const ulPres=$('listaPresentes'); ulPres.innerHTML='';
+  const presentes=[...Array.from(presentOwners).map(o=>({name:o,tag:'Propietario'})), ...Array.from(presentReps).map(r=>({name:r,tag:'Representante'}))]
+    .sort((a,b)=>a.name.localeCompare(b.name,'es',{sensitivity:'base'}));
+  for(const p of presentes){
+    const li=document.createElement('li');
+    const isOwner = p.tag==='Propietario';
+    const sinVoto = isOwner && noVoteOwners.has(p.name);
+    li.className='flex items-center justify-between gap-2';
+    li.innerHTML=html`<div class="truncate ${sinVoto?'text-rose-700':''}">
+        <span class="font-medium">${p.name}</span> <span class="badge ml-2">${p.tag}</span>
+        ${sinVoto?'<span class="badge badge-warn ml-2" title="Sin derecho a voto · no computa coef.">SIN VOTO: no computa coef. ni voto</span>':''}
+      </div>
+      <button class="btn btn-ghost" title="Eliminar">❌</button>`;
+    li.querySelector('button').addEventListener('click', ()=>removePresente(p.name));
+    ulPres.appendChild(li);
+  }
+  const ulRep=$('listaRepresentados'); ulRep.innerHTML='';
+  const pairs=[];
+  for(const [rep,set] of repToOwners.entries()){
+    for(const owner of set){
+      const props=ownerMap.get(owner)||[]; const n=props.length; const coef=props.reduce((s,p)=>s+p.coef,0);
+      pairs.push({rep, owner, n, coef});
+    }
+  }
+  pairs.sort((a,b)=>(a.rep+a.owner).localeCompare(b.rep+b.owner,'es',{sensitivity:'base'}));
+  for(const it of pairs){
+    const sinVoto = noVoteOwners.has(it.owner);
+    const li=document.createElement('li'); const muted=presentOwners.has(it.owner)?'text-orange-600':'text-gray-600';
+    li.className='flex items-center justify-between gap-2';
+    li.innerHTML=html`<div class="truncate ${sinVoto?'text-rose-700':''}">
+        <span class="font-medium">${it.rep}</span> <span class="muted">←</span> <span class="font-medium">${it.owner}</span>
+        <span class="ml-2 text-xs ${muted}">(${it.n} props · ${fmtCoef(it.coef)})</span>
+        ${sinVoto?'<span class="badge badge-warn ml-2" title="Sin derecho a voto · no computa coef.">SIN VOTO: no computa coef. ni voto</span>':''}
+      </div>
+      <button class="btn btn-ghost" title="Eliminar delegación">❌</button>`;
+    li.querySelector('button').addEventListener('click', ()=>removeDelegacion(it.rep, it.owner));
+    ulRep.appendChild(li);
+  }
+}
+
+// ========= KPIs (morosos excluidos en Totales)
+function getBaseOwnersSet(){
+  const owners=new Set();
+  for(const o of presentOwners){ if(!noVoteOwners.has(o)) owners.add(o); }
+  for(const [o,_rep] of ownerToRep.entries()){
+    if(!presentOwners.has(o) && !noVoteOwners.has(o)) owners.add(o);
+  }
+  return owners;
+}
+function calcPresentTotals(){
+  let props = 0, coef = 0;
+  for (const owner of presentOwners){
+    if (noVoteOwners.has(owner)) continue;
+    const arr = ownerMap.get(owner) || [];
+    props += arr.length;
+    coef  += arr.reduce((s,p)=> s + p.coef, 0);
+  }
+  return { props, coef };
+}
+function calcRepresentedTotals(){
+  let props = 0, coef = 0;
+  for (const [owner, _rep] of ownerToRep.entries()){
+    if (presentOwners.has(owner)) continue;
+    if (noVoteOwners.has(owner)) continue;
+    const arr = ownerMap.get(owner) || [];
+    props += arr.length;
+    coef  += arr.reduce((s,p)=> s + p.coef, 0);
+  }
+  return { props, coef };
+}// Presentes SIN voto (solo morosos presentes)
+function calcPresentTotalsNoVoto(){
+  let props = 0, coef = 0;
+  for (const owner of presentOwners){
+    if (!noVoteOwners.has(owner)) continue;
+    const arr = ownerMap.get(owner) || [];
+    props += arr.length;
+    coef  += arr.reduce((s,p)=> s + p.coef, 0);
+  }
+  return { props, coef };
+}
+
+// Representados SIN voto (morosos representados que NO están presentes)
+function calcRepresentedTotalsNoVoto(){
+  let props = 0, coef = 0;
+  for (const [owner, _rep] of ownerToRep.entries()){
+    if (presentOwners.has(owner)) continue;
+    if (!noVoteOwners.has(owner)) continue;
+    const arr = ownerMap.get(owner) || [];
+    props += arr.length;
+    coef  += arr.reduce((s,p)=> s + p.coef, 0);
+  }
+  return { props, coef };
+}
+
+function recalcularKPIs(){
+  // Totales elegibles (ya existentes)
+  const pres = calcPresentTotals();        // presentes con voto
+  const rep  = calcRepresentedTotals();    // representados con voto
+
+  // Nuevos: SIN voto
+  const presNV = calcPresentTotalsNoVoto();
+  const repNV  = calcRepresentedTotalsNoVoto();
+
+  // Totales "quórum" (elegibles) — ya mostrados en 1ª fila
+  const totProps = pres.props + rep.props;
+  const totCoef  = pres.coef  + rep.coef;
+
+  // Totales "asistencia" (con o sin voto) — nueva 2ª fila
+  const totAllProps = totProps + presNV.props + repNV.props;
+  const totAllCoef  = totCoef  + presNV.coef  + repNV.coef;
+
+  const pct = (x)=> totalCoefTitulo ? (x/totalCoefTitulo) : 0;
+  const mayCoef = totCoef * 0.5;
+
+  // KPI fila 1 (ya existentes)
+  $('kpiPresProps').textContent = pres.props;
+  $('kpiPresCoef').textContent  = fmtCoef(pres.coef);
+  $('kpiPresPct').textContent   = fmtPct(pct(pres.coef));
+
+  $('kpiRepProps').textContent  = rep.props;
+  $('kpiRepCoef').textContent   = fmtCoef(rep.coef);
+  $('kpiRepPct').textContent    = fmtPct(pct(rep.coef));
+
+  $('kpiTotProps').textContent  = totProps;
+  $('kpiTotCoef').textContent   = fmtCoef(totCoef);
+  $('kpiTotPct').textContent    = fmtPct(pct(totCoef));
+  $('kpiMayorCoef').textContent = fmtCoef(mayCoef);
+
+  const baseVotesLPH = getBaseOwnersSet().size;
+  $('kpiVotesLPH').textContent = baseVotesLPH;
+
+  // KPI fila 2 (nuevos)
+  $('kpiPresSinProps').textContent = presNV.props;
+  $('kpiPresSinCoef').textContent  = fmtCoef(presNV.coef);
+  $('kpiPresSinPct').textContent   = fmtPct(pct(presNV.coef));
+
+  $('kpiRepSinProps').textContent  = repNV.props;
+  $('kpiRepSinCoef').textContent   = fmtCoef(repNV.coef);
+  $('kpiRepSinPct').textContent    = fmtPct(pct(repNV.coef));
+
+  $('kpiTotAllProps').textContent  = totAllProps;
+  $('kpiTotAllCoef').textContent   = fmtCoef(totAllCoef);
+  $('kpiTotAllPct').textContent    = fmtPct(pct(totAllCoef));
+}
+
+
+// ========= Agenda
+function addPunto(titulo, majority='simple'){
+  agenda.push({ id:'p'+(puntoAutoId++), titulo: titulo.trim(), majority, bloqueado:false, resultados:null });
+}
+function movePunto(idx, dir){ const j=idx+dir; if(j<0||j>=agenda.length) return; const t=agenda[idx]; agenda[idx]=agenda[j]; agenda[j]=t; renderListaPuntos(); }
+function deletePunto(idx){ agenda.splice(idx,1); renderListaPuntos(); }
+function renderListaPuntos(){
+  const ul=$('listaPuntos'); ul.innerHTML='';
+  agenda.forEach((p,i)=>{
+    const li=document.createElement('li'); li.className='flex items-center gap-2';
+    li.innerHTML=html`
+      <input class="input w-full" value="${p.titulo.replace(/"/g,'&quot;')}" />
+      <select class="select">
+        <option value="simple"${p.majority==='simple'?' selected':''}>Simple (>50%)</option>
+        <option value="3/5"${p.majority==='3/5'?' selected':''}>Cualif. (≥ 3/5)</option>
+        <option value="2/3"${p.majority==='2/3'?' selected':''}>Cualif. (≥ 2/3)</option>
+        <option value="unanimidad"${p.majority==='unanimidad'?' selected':''}>Unanimidad (100%)</option>
+      </select>
+      <div class="flex gap-1">
+        <button class="btn" title="Subir">⬆️</button>
+        <button class="btn" title="Bajar">⬇️</button>
+        <button class="btn btn-danger" title="Eliminar">❌</button>
+      </div>`;
+    const [input, select, up, down, del] = [
+  li.querySelector('input'),
+  li.querySelector('select'),
+  ...li.querySelectorAll('button')
+];
+
+    input.addEventListener('input', ev=>p.titulo=ev.target.value);
+    select.addEventListener('change', ev=>p.majority=ev.target.value);
+    up.addEventListener('click', ()=>movePunto(i,-1));
+    down.addEventListener('click', ()=>movePunto(i,+1));
+    del.addEventListener('click', ()=>deletePunto(i));
+    ul.appendChild(li);
+  });
+}
+
+// ========= Iniciar votación
+function iniciarVotacion(){
+  if (!censo.length){ alert('Cargue un censo antes.'); return; }
+  const totCoef = parseFloat($('kpiTotCoef').textContent); if (!(totCoef>0)){ alert('No hay asistentes elegibles (coeficiente base = 0).'); return; }
+  if (!agenda.length){ alert('Defina al menos un punto.'); return; }
+  if (!confirm('Se bloqueará el registro y la configuración de puntos. ¿Continuar?')) return;
+
+  registroBloqueado=true; $('msgBloqueo').textContent='Registro bloqueado. Puede comenzar la votación.'; $('configPuntos').classList.add('hidden');
+
+  propToAgent=new Map();
+
+  // Incluir a todos (elegibles y morosos). Los morosos verán su fila deshabilitada y no computan en base/resultados.
+  for(const owner of presentOwners){
+    const arr=ownerMap.get(owner)||[];
+    for(const p of arr) propToAgent.set(p.propiedad_id, owner);
+  }
+  for(const [owner, rep] of ownerToRep.entries()){
+    if (presentOwners.has(owner)) continue;
+    const arr=ownerMap.get(owner)||[];
+    for(const p of arr) propToAgent.set(p.propiedad_id, rep);
+  }
+
+  puntoVotosPorProp=new Map(); for(const p of agenda){ puntoVotosPorProp.set(p.id,new Map()); p.bloqueado=false; p.resultados=null; }
+
+  renderTarjetasVotacion();
+}
+
+// ========= Votación por puntos (agrupado por representante con cabecera desplegable)
+function buildVotingUnits(){
+  const units = []; // {mode:'presente'|'representado'|'repHeader', owner?, agent?, nProps?, coef?, eligible?, rep?}
+
+  // 1) Presentes sin representante (titulares presentes que no delegan)
+  for (const owner of presentOwners){
+    if (ownerToRep.has(owner)) continue; // seguridad
+    const arr = ownerMap.get(owner) || [];
+    const props = arr.filter(pr=>propToAgent.has(pr.propiedad_id));
+    if (!props.length) continue;
+    units.push({
+      mode: 'presente',
+      owner,
+      agent: owner,
+      nProps: props.length,
+      coef: props.reduce((s,p)=>s+p.coef,0),
+      eligible: !noVoteOwners.has(owner)
+    });
+  }
+
+  // 2) Representantes con sus representados
+  for (const rep of (repToOwners ? Array.from(repToOwners.keys()) : [])){
+    // hijos representados de este rep con propiedades válidas en propToAgent
+    const children = Array.from(repToOwners.get(rep) || []).filter(owner=>{
+      const arr = ownerMap.get(owner) || [];
+      return arr.some(pr=>propToAgent.has(pr.propiedad_id));
+    });
+
+    if (!children.length) continue;
+
+    const anyEligible = children.some(o => !noVoteOwners.has(o));
+    // Fila cabecera del representante (no es propietario: solo “aplica a hijos”)
+    units.push({ mode: 'repHeader', rep, eligible: anyEligible });
+
+    // Hijos: representados por "rep"
+    for (const owner of children){
+      const arr = ownerMap.get(owner) || [];
+      const props = arr.filter(pr=>propToAgent.has(pr.propiedad_id));
+      if (!props.length) continue;
+      units.push({
+        mode: 'representado',
+        owner,
+        agent: rep,
+        nProps: props.length,
+        coef: props.reduce((s,p)=>s+p.coef,0),
+        eligible: !noVoteOwners.has(owner)
+      });
+    }
+  }
+
+  // No ordenamos: mantenemos grupos (presentes arriba, luego reps agrupados)
+  return units;
+}
+
+
+function renderTarjetasVotacion(){
+  const cont=$('seccionVotacion'); cont.innerHTML='';
+  if (!registroBloqueado){
+    cont.innerHTML='<div class="card text-sm text-gray-600">Bloquee el registro para comenzar la votación.</div>';
+    return;
+  }
+
+  const units = buildVotingUnits();
+  if (!units.length){
+    cont.innerHTML='<div class="card text-sm text-gray-600">No hay titulares con propiedades/delegaciones para votar.</div>';
+    return;
+  }
+
+  for(const p of agenda){
+    const card=document.createElement('section'); card.className='card'; card.id='card_'+p.id;
+    const prettyMaj = prettyMajority(p.majority);
+
+    card.innerHTML=html`
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <h3 class="text-lg font-semibold">${p.titulo}</h3>
+          <div class="text-xs text-gray-600">Tipo de mayoría: <strong>${prettyMaj}</strong> (doble: votos LPH y coef.)</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="muted">Aplicar a todos (elegibles):</span>
+          <button class="btn" data-apply="si">Sí</button>
+          <button class="btn" data-apply="no">No</button>
+          <button class="btn" data-apply="abs">Abstención</button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="text-left">Propietario / Representado</th>
+              <th class="w-24 text-center">Sí</th>
+              <th class="w-24 text-center">No</th>
+              <th class="w-24 text-center">Abst.</th>
+            </tr>
+          </thead>
+          <tbody id="tbody_${p.id}">
+            ${units.map((u, idx) => {
+              if (u.mode === 'repHeader') {
+                const repId = u.rep.replace(/\W+/g, '_');
+                return `
+                  <tr class="bg-gray-50 border-t">
+                    <td colspan="4" class="py-2">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                          <button class="btn btn-ghost p-1" data-toggle-rep="${repId}" title="Mostrar/ocultar representados">▸</button>
+                          <span class="font-medium">${u.rep}</span>
+                          <span class="text-xs text-gray-500">(representante)</span>
+                          ${u.eligible ? '' : '<span class="badge badge-warn ml-2">SIN VOTO (todos morosos)</span>'}
+                        </div>
+                        <div class="flex items-center gap-3 pr-2">
+                          <label class="text-xs text-gray-500">Aplicar a sus representados:</label>
+                          <div class="flex items-center gap-2" data-rep-group="${repId}">
+                            <label class="inline-flex items-center gap-1">
+                              <input type="radio" name="rep_${p.id}_${repId}" value="si" ${!u.eligible?'disabled':''}/>
+                              <span>Sí</span>
+                            </label>
+                            <label class="inline-flex items-center gap-1">
+                              <input type="radio" name="rep_${p.id}_${repId}" value="no" ${!u.eligible?'disabled':''}/>
+                              <span>No</span>
+                            </label>
+                            <label class="inline-flex items-center gap-1">
+                              <input type="radio" name="rep_${p.id}_${repId}" value="abs" ${!u.eligible?'disabled':''}/>
+                              <span>Abst.</span>
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }
+
+              // Filas hijo (representados) y presentes “sueltos”
+              const disabled = !u.eligible;
+              const name = `v_${p.id}_${idx}`;
+              const isChild = (u.mode === 'representado');
+              const repId = isChild ? u.agent.replace(/\W+/g,'_') : '';
+              const rowCls = isChild ? `child child-of-${repId} hidden` : '';
+              const label = (isChild)
+                ? `${u.agent} <span class="text-xs text-gray-500">(representa a)</span> <b>${u.owner}</b> <span class="ml-2 text-xs text-gray-500">(${u.nProps} prop · ${fmtCoef(u.coef)})</span>`
+                : `${u.owner} <span class="ml-2 text-xs text-gray-500">(${u.nProps} prop · ${fmtCoef(u.coef)})</span>`;
+
+              return `
+                <tr class="${rowCls}">
+                  <td class="py-2">
+                    ${isChild ? '<span class="inline-block w-5"></span>' : ''} 
+                    ${label}
+                    ${disabled ? ' <span class="badge badge-warn ml-2" title="Sin derecho a voto">SIN VOTO</span>' : ''}
+                  </td>
+                  <td class="text-center">
+                    <input type="radio" name="${name}" value="si" ${disabled?'disabled':''}>
+                  </td>
+                  <td class="text-center">
+                    <input type="radio" name="${name}" value="no" ${disabled?'disabled':''}>
+                  </td>
+                  <td class="text-center">
+                    <input type="radio" name="${name}" value="abs" ${disabled?'disabled':''} checked>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2 mt-3">
+        <button class="btn-primary btn" id="btnReg_${p.id}">Registrar votos del punto</button>
+        <button class="btn" id="btnCerrar_${p.id}">Cerrar punto</button>
+        <span class="text-sm" id="msg_${p.id}"></span>
+      </div>
+      <div class="mt-3 text-sm" id="res_${p.id}"></div>
+    `;
+    cont.appendChild(card);
+
+    // === Listeners ===
+
+   // Listener para "Aplicar a todos" (sincroniza hijos + cabeceras de representante)
+card.querySelectorAll('button[data-apply]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const val = btn.getAttribute('data-apply'); // 'si' | 'no' | 'abs'
+
+    // 1) Marcar TODAS las filas elegibles (presentes y representados)
+    units.forEach((u, idx)=>{
+      if (u.mode === 'repHeader') return;     // no es fila de voto
+      if (!u.eligible) return;                // sin derecho a voto
+      const name = `v_${p.id}_${idx}`;
+      const radios = card.querySelectorAll(`input[name="${name}"]`);
+      radios.forEach(r => r.checked = (r.value === val));
+    });
+
+    // 2) Sincronizar radios de CABECERA por cada representante
+    //    - Si ese representante tiene al menos un representado elegible, marcamos su radio del header.
+    //    - Si no tiene ninguno elegible, dejamos el header sin selección.
+    const repIds = new Set();
+    units.forEach(u=>{
+      if (u.mode === 'repHeader') repIds.add(u.rep.replace(/\W+/g,'_'));
+    });
+
+    repIds.forEach(repId=>{
+      const anyEligibleChild = units.some(uu =>
+        uu.mode === 'representado' &&
+        uu.eligible &&
+        uu.agent.replace(/\W+/g,'_') === repId
+      );
+
+      const headerRadios = card.querySelectorAll(`[data-rep-group="${repId}"] input[type="radio"]`);
+      if (!headerRadios.length) return;
+
+      if (anyEligibleChild){
+        headerRadios.forEach(h => { h.checked = (h.value === val) && !h.disabled; });
+      } else {
+        // sin hijos elegibles: limpiar selección en header
+        headerRadios.forEach(h => { h.checked = false; });
+      }
+    });
+  });
+});
+
+
+    // ▸ Desplegar / colapsar representados del rep
+    card.querySelectorAll('button[data-toggle-rep]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const repId = btn.getAttribute('data-toggle-rep');
+        const open = btn.textContent.trim() === '▸';
+        btn.textContent = open ? '▾' : '▸';
+        card.querySelectorAll(`.child-of-${repId}`).forEach(tr=>{
+          tr.classList.toggle('hidden', !open);
+        });
+      });
+    });
+
+    // Aplicar voto del representante a TODOS sus representados
+    card.querySelectorAll('[data-rep-group]').forEach(group=>{
+      const repId = group.getAttribute('data-rep-group');
+      group.querySelectorAll('input[type="radio"]').forEach(r=>{
+        r.addEventListener('change', ()=>{
+          const val = r.value; // 'si' | 'no' | 'abs'
+          card.querySelectorAll(`.child-of-${repId}`).forEach(tr=>{
+            const radios = tr.querySelectorAll('input[type="radio"]');
+            radios.forEach(rr => rr.checked = (rr.value === val) && !rr.disabled);
+          });
+        });
+      });
+    });
+
+    // Si cambio un hijo, reflejar "mixto" en el header (quitar selección si no hay unanimidad)
+    card.querySelectorAll('tr.child input[type="radio"]').forEach(rr=>{
+      rr.addEventListener('change', ()=>{
+        const tr = rr.closest('tr.child');
+        const match = Array.from(tr.classList).find(c => c.startsWith('child-of-'));
+        if (!match) return;
+        const repId = match.replace('child-of-','');
+
+        const childRows = Array.from(card.querySelectorAll(`.child-of-${repId}`));
+        const values = childRows.map(row=>{
+          const ck = row.querySelector('input[type="radio"]:checked');
+          return ck ? ck.value : null;
+        }).filter(Boolean);
+
+        const unanimous = values.length && values.every(v => v === values[0]);
+        const headerRadios = card.querySelectorAll(`[data-rep-group="${repId}"] input[type="radio"]`);
+
+        if (!unanimous){
+          headerRadios.forEach(h => h.checked = false); // mixto → header sin selección
+        } else {
+          headerRadios.forEach(h => h.checked = (h.value === values[0]));
+        }
+      });
+    });
+
+    // Registrar / Cerrar
+    card.querySelector('#btnReg_'+p.id).addEventListener('click', ()=>registrarVotosPunto(p.id, units));
+    card.querySelector('#btnCerrar_'+p.id).addEventListener('click', ()=>cerrarPunto(p.id));
+  }
+}
+
+function registrarVotosPunto(puntoId, units){
+  const p = agenda.find(x=>x.id===puntoId); if(!p||p.bloqueado) return;
+  const card=$('card_'+p.id);
+  const mapProp = puntoVotosPorProp.get(p.id) || new Map();
+
+  units.forEach((u,idx)=>{
+    const props = (ownerMap.get(u.owner)||[]).map(x=>x.propiedad_id).filter(pid=>propToAgent.has(pid));
+    if (!props.length) return;
+    let voto='abs';
+    if (u.eligible){
+      const name=`v_${p.id}_${idx}`; const checked=card.querySelector(`input[name="${name}"]:checked`);
+      voto = checked?checked.value:'abs';
+    } else { voto = 'abs'; }
+    props.forEach(pid=>mapProp.set(pid, voto));
+  });
+
+  puntoVotosPorProp.set(p.id, mapProp);
+  p.resultados = computeResultadosPunto(p);
+  renderResultadosPunto(p); renderResumenFinal();
+}
+
+// ========= Cómputo
+function ownerVoteForPoint(owner, puntoId){
+  const mapProp = puntoVotosPorProp.get(puntoId) || new Map();
+  const props=ownerMap.get(owner)||[];
+  for(const pr of props){
+    if (!propToAgent.has(pr.propiedad_id)) continue;
+    const v=mapProp.get(pr.propiedad_id);
+    if (v) return v;
+  }
+  return 'abs';
+}
+
+function computeResultadosPunto(p){
+  const mapProp = puntoVotosPorProp.get(p.id) || new Map();
+  const baseProps  = Array.from(propToAgent.keys());
+  const baseOwners = getBaseOwnersSet();
+
+  let baseCoef=0, vSi=0, vNo=0, vAbs=0, cSi=0, cNo=0, cAbs=0;
+
+  for(const propId of baseProps){
+    const row=propIndex.get(propId); if(!row) continue;
+    const owner = row.propietario;
+    if (noVoteOwners.has(owner)) continue;
+    baseCoef+=row.coef;
+    const voto=mapProp.get(propId)||'abs';
+    if (voto==='si') cSi+=row.coef; else if (voto==='no') cNo+=row.coef; else cAbs+=row.coef;
+  }
+  for(const owner of baseOwners){
+    const vote = ownerVoteForPoint(owner, p.id);
+    if (vote==='si') vSi++; else if (vote==='no') vNo++; else vAbs++;
+  }
+
+  const thr = thresholds(p.majority);
+  const votesPass = checkThreshold(vSi, vSi+vNo+vAbs, thr.votes);
+  const coefPass  = checkThreshold(cSi, baseCoef,    thr.coef);
+  const aprobado = votesPass && coefPass;
+
+  return {
+    baseCoef, baseVotes: vSi+vNo+vAbs,
+    yes:{votes:vSi, coef:cSi}, no:{votes:vNo, coef:cNo}, abst:{votes:vAbs, coef:cAbs},
+    majority: p.majority, votesPass, coefPass, aprobado
+  };
+}
+
+function thresholds(kind){
+  switch(kind){
+    case 'simple': return { votes:{mode:'gt',  ratio:0.5}, coef:{mode:'gt',  ratio:0.5} };
+    case '3/5':    return { votes:{mode:'ge',  ratio:0.6}, coef:{mode:'ge',  ratio:0.6} };
+    case '2/3':    return { votes:{mode:'ge',  ratio:2/3}, coef:{mode:'ge',  ratio:2/3} };
+    case 'unanimidad': return { votes:{mode:'eq', ratio:1}, coef:{mode:'eq', ratio:1} };
+    default:       return { votes:{mode:'gt',  ratio:0.5}, coef:{mode:'gt',  ratio:0.5} };
+  }
+}
+function checkThreshold(yes, base, rule){
+  if (!(base>0)) return false;
+  const r = yes/base, eps=1e-9;
+  if (rule.mode==='gt') return r - rule.ratio >  eps;
+  if (rule.mode==='ge') return r - rule.ratio > -eps;
+  if (rule.mode==='eq') return Math.abs(r - rule.ratio) < eps;
+  return false;
+}
+function prettyMajority(kind){
+  if (kind==='simple') return 'Simple (>50%)';
+  if (kind==='3/5') return 'Cualificada (≥ 3/5)';
+  if (kind==='2/3') return 'Cualificada (≥ 2/3)';
+  if (kind==='unanimidad') return 'Unanimidad (100%)';
+  return kind;
+}
+
+function cerrarPunto(pId){
+  const p = agenda.find(x=>x.id===pId); if(!p) return;
+  if (!p.resultados){
+    if(!confirm('Aún no ha registrado los votos de este punto. ¿Cerrar igualmente?')) return;
+    const mapProp = puntoVotosPorProp.get(p.id)||new Map();
+    for(const propId of propToAgent.keys()) if(!mapProp.has(propId)) mapProp.set(propId,'abs');
+    puntoVotosPorProp.set(p.id,mapProp);
+    p.resultados = computeResultadosPunto(p);
+  }
+  p.bloqueado=true;
+  const card=$('card_'+p.id);
+  card.querySelectorAll('input[type="radio"]').forEach(r=>r.disabled=true);
+  card.querySelectorAll('button').forEach(b=>b.disabled=true);
+  const msg=$('msg_'+p.id); msg.textContent='Punto cerrado.'; msg.className='text-sm text-gray-700';
+  renderResultadosPunto(p); renderResumenFinal();
+}
+
+function renderResultadosPunto(p){
+  const div=$('res_'+p.id); if(!p.resultados){ div.innerHTML=''; return; }
+  const R=p.resultados; const base=R.baseCoef; const pct=x=> base? ((x/base)*100).toFixed(2):'0.00';
+  const majTxt = prettyMajority(R.majority);
+  const detalle = `Requisitos: ${majTxt} (votos y coeficiente) — votos: ${R.votesPass?'cumple':'no cumple'}, coeficiente: ${R.coefPass?'cumple':'no cumple'}.`;
+
+  div.innerHTML=html`
+    <div class="rounded-xl border border-gray-200 p-3 bg-gray-50">
+      <div class="grid md:grid-cols-6 gap-2">
+        <div><div class="text-xs text-gray-600">Base (coef.)</div><div class="font-semibold">${fmtCoef(base)}</div></div>
+        <div><div class="text-xs text-gray-600">Votos base (LPH)</div><div class="font-semibold">${R.baseVotes}</div></div>
+        <div><div class="font-medium">A favor</div><div class="text-sm">${R.yes.votes} votos · ${fmtCoef(R.yes.coef)} coef · ${pct(R.yes.coef)}%</div></div>
+        <div><div class="font-medium">En contra</div><div class="text-sm">${R.no.votes} votos · ${fmtCoef(R.no.coef)} coef · ${pct(R.no.coef)}%</div></div>
+        <div><div class="font-medium">Abstención</div><div class="text-sm">${R.abst.votes} votos · ${fmtCoef(R.abst.coef)} coef · ${pct(R.abst.coef)}%</div></div>
+        <div class="text-xs text-gray-600">${detalle}</div>
+      </div>
+      <div class="mt-2 text-sm">
+        Resultado: <span class="${R.aprobado ? 'text-green-700' : 'text-red-700'} font-semibold">${R.aprobado ? 'APROBADO' : 'NO APROBADO'}</span>
+      </div>
+    </div>`;
+}
+
+// ========= Resumen
+function renderResumenFinal(){
+  const cont=$('resumenTabla'); cont.innerHTML='';
+  if (!agenda.length) return;
+  let htmlTable='<table class="table">';
+  htmlTable+='<thead><tr><th>Punto</th><th>Tipo de mayoría</th><th>A favor (votos/coef./%)</th><th>En contra (votos/coef./%)</th><th>Abst. (votos/coef./%)</th><th>Base (votos/coef.)</th><th>Resultado</th></tr></thead><tbody>';
+  for(const p of agenda){
+    if(!p.resultados){
+      htmlTable+=`<tr><td class="font-medium">${p.titulo}</td><td>${prettyMajority(p.majority)}</td><td colspan="5" class="text-gray-500">Sin registrar</td></tr>`;
+    }else{
+      const R=p.resultados; const base=R.baseCoef; const pct=x=>base?((x/base)*100).toFixed(2):'0.00';
+      const cell=v=>`${v.votes} / ${fmtCoef(v.coef)} / ${pct(v.coef)}%`;
+      htmlTable+=`<tr>
+        <td class="font-medium">${p.titulo}</td>
+        <td>${prettyMajority(R.majority)}</td>
+        <td>${cell(R.yes)}</td><td>${cell(R.no)}</td><td>${cell(R.abst)}</td>
+        <td>${R.baseVotes} / ${fmtCoef(base)}</td>
+        <td><span class="${R.aprobado ? 'text-green-700' : 'text-red-700'} font-semibold">${R.aprobado?'APROBADO':'NO APROBADO'}</span></td>
+      </tr>`;
+    }
+  }
+  htmlTable+='</tbody></table>'; cont.innerHTML=htmlTable;
+}
+
+// ========= Export Excel (votos por titular)
+function exportExcelVotosTitulares(){
+  if (!censo.length){ alert('Cargue el censo.'); return; }
+  if (!registroBloqueado){ if(!confirm('El registro no está bloqueado. Exportar igualmente?')) return; }
+
+  const units = buildVotingUnits(); // incluye morosos (eligible=false)
+  if (!units.length){ alert('No hay titulares con propiedades/delegaciones.'); return; }
+
+  const header = ['Titular','Agente','Tipo','Moroso','Nº Propiedades','Coeficiente'];
+  const voteCols = agenda.map((p,i)=>`${i+1}) ${p.titulo}`);
+  const data = [ header.concat(voteCols) ];
+
+  const mapVote = {si:'A favor', no:'En contra', abs:'Abstención'};
+
+  units.forEach(u=>{
+if (u.mode === 'repHeader') return;
+    const moroso = noVoteOwners.has(u.owner);
+    const agente = u.mode==='representado' ? (u.agent) : u.owner;
+    const titularRep = u.mode==='representado' ? u.owner : '';
+const tipoTx = (u.mode === 'presente') ? 'Presente' : 'Representado';
+    const baseRow = [u.owner, agente + (titularRep?` (representa a ${titularRep})`:''), u.mode, moroso?'Sí':'No', u.nProps, fmtCoef(u.coef)];
+    const perPoint = agenda.map(p=>{
+      const v = ownerVoteForPoint(u.owner, p.id);
+      return moroso ? `${mapVote[v]} (SIN VOTO)` : mapVote[v];
+    });
+    data.push(baseRow.concat(perPoint));
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const colWidths = data[0].map((_,ci)=>({ wch: Math.max(...data.map(r=>String(r[ci]??'').length))+2 }));
+  ws['!cols'] = colWidths;
+  XLSX.utils.book_append_sheet(wb, ws, 'Votos por titular');
+  XLSX.writeFile(wb, 'detalle_votos.xlsx');
+}
+
+// ========= Anexos (UI)
+function onAnexosChosen(ev){
+  const files = Array.from(ev.target.files||[]);
+  for (const f of files){
+    const kind = f.type.includes('pdf') ? 'pdf' : (f.type.startsWith('image/') ? 'image' : null);
+    if (!kind) continue;
+    anexos.push({ file:f, name:f.name, kind });
+  }
+  renderListaAnexos();
+  ev.target.value = '';
+}
+function renderListaAnexos(){
+  const cont = $('listaAnexos');
+  if (!anexos.length){ cont.innerHTML = '<span class="text-gray-500">Sin anexos.</span>'; return; }
+  const rows = anexos.map((a,idx)=>`
+    <div class="flex items-center justify-between gap-2 border border-gray-200 rounded-lg px-3 py-2 mb-2 bg-white">
+      <div class="truncate">
+        <span class="font-medium">${a.name}</span>
+        <span class="badge ml-2">${a.kind.toUpperCase()}</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <button class="btn" data-up="${idx}" ${idx===0?'disabled':''}>⬆️</button>
+        <button class="btn" data-down="${idx}" ${idx===anexos.length-1?'disabled':''}>⬇️</button>
+        <button class="btn btn-danger" data-del="${idx}">❌</button>
+      </div>
+    </div>`).join('');
+  cont.innerHTML = rows;
+
+  cont.querySelectorAll('[data-up]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const i = +b.getAttribute('data-up');
+      if (i>0) { const t=anexos[i-1]; anexos[i-1]=anexos[i]; anexos[i]=t; renderListaAnexos(); }
+    });
+  });
+  cont.querySelectorAll('[data-down]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const i = +b.getAttribute('data-down');
+      if (i<anexos.length-1) { const t=anexos[i+1]; anexos[i+1]=anexos[i]; anexos[i]=t; renderListaAnexos(); }
+    });
+  });
+  cont.querySelectorAll('[data-del]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      const i = +b.getAttribute('data-del');
+      anexos.splice(i,1);
+      renderListaAnexos();
+    });
+  });
+}
+
+// ========= Modal PDF meta
+function openPDFMetaModal(){
+  if (!censo.length){ alert('Cargue el censo.'); return; }
+  const m = $('pdfMetaModal'); m.classList.add('show');
+  m.classList.remove('hidden');
+}
+function closePDFMetaModal(){
+  const m = $('pdfMetaModal'); m.classList.remove('show');
+  m.classList.add('hidden');
+}
+function prefillMetaFromSession(){
+  $('metaComunidad').value = sessionStorage.getItem('metaComunidad') || '';
+  $('metaPresidente').value= sessionStorage.getItem('metaPresidente') || '';
+  $('metaJunta').value     = sessionStorage.getItem('metaJunta') || '';
+  $('metaSecretario').value= sessionStorage.getItem('metaSecretario') || '';
+  $('metaLugar').value     = sessionStorage.getItem('metaLugar') || '';
+  $('metaFecha').value     = sessionStorage.getItem('metaFecha') || '';
+  $('metaHora').value      = sessionStorage.getItem('metaHora') || '';
+}
+function onConfirmPDFMeta(){
+  const meta = {
+    comunidad : $('metaComunidad').value.trim(),
+    presidente: $('metaPresidente').value.trim(),
+    junta     : $('metaJunta').value.trim(),
+    secretario: $('metaSecretario').value.trim(),
+    lugar     : $('metaLugar').value.trim(),
+    fecha     : $('metaFecha').value,
+    hora      : $('metaHora').value
+  };
+  if ($('metaRemember').checked){
+    sessionStorage.setItem('metaComunidad', meta.comunidad);
+    sessionStorage.setItem('metaPresidente', meta.presidente);
+    sessionStorage.setItem('metaJunta', meta.junta);
+    sessionStorage.setItem('metaSecretario', meta.secretario);
+    sessionStorage.setItem('metaLugar', meta.lugar);
+    sessionStorage.setItem('metaFecha', meta.fecha);
+    sessionStorage.setItem('metaHora', meta.hora);
+  }
+  closePDFMetaModal();
+  exportPDFActa(meta);
+}
+
+// ========= Logo: cargar con medidas reales y tipo
+async function onLogoChosen(ev){
+  const f=ev.target.files?.[0];
+  if (!f){
+    logoMeta = { dataUrl:null, w:0, h:0, type:'PNG' };
+    return;
+  }
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const dataUrl = rd.result;
+    const img = new Image();
+    img.onload = ()=>{
+      const w = img.naturalWidth || img.width || 0;
+      const h = img.naturalHeight || img.height || 0;
+      const type = /^data:image\/png/i.test(String(dataUrl)) ? 'PNG' : 'JPEG';
+      logoMeta = { dataUrl, w, h, type };
+    };
+    img.src = dataUrl;
+  };
+  rd.readAsDataURL(f);
+}
+
+// ========= Export PDF (PRO · limpio, con logo proporcionado)
+function exportPDFActa(meta={}){
+  if (!censo.length){ alert('Cargue el censo.'); return; }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 48;
+
+  // ======= Estilos
+  const COLOR_TEXT = 34;
+  const COLOR_HEAD_BG = [245,248,250];  // encabezados tabla
+  const COLOR_SECTION_BG = [243,244,246]; // banda de sección
+  const FONT = 'helvetica';
+
+  // ======= Utilidades
+  const LINE = (y)=>{ doc.setDrawColor(230); doc.line(M, y, W-M, y); };
+  const pct = (x, base)=> (base>0 ? (x/base*100).toFixed(2) : '0.00');
+  const prettyMaj = (k)=> prettyMajority(k);
+  let cursorY = M;
+
+  function sectionBlock(title){
+    const h = 28;
+    doc.setFillColor(...COLOR_SECTION_BG);
+    doc.roundedRect(M, cursorY, W-2*M, h, 6, 6, 'F');
+    doc.setFont(FONT,'bold').setFontSize(12).setTextColor(33);
+    doc.text(title, M+10, cursorY+18);
+    cursorY += h + 12;
+  }
+  function autoTablePlain(head, body, opt={}){
+    doc.autoTable({
+      startY: cursorY,
+      theme: 'plain',
+      head:[head],
+      body,
+      styles: { font:FONT, fontSize:10, cellPadding:6, textColor: COLOR_TEXT, lineWidth:0 },
+      headStyles: { fillColor: COLOR_HEAD_BG, textColor: COLOR_TEXT, halign:'left', fontStyle:'bold' },
+      margin: { left:M, right:M },
+      tableWidth: W - 2*M,
+      ...opt
+    });
+    cursorY = doc.lastAutoTable.finalY + 14;
+  }
+  function drawKVList(pairs, labelWidth=160, lineH=16){
+    doc.setFont(FONT,'bold').setFontSize(10).setTextColor(33);
+    for (const [label, value] of pairs){
+      doc.text((label||'')+':', M, cursorY);
+      doc.setFont(FONT,'normal').setFontSize(10).setTextColor(COLOR_TEXT);
+      const v = value && String(value).trim() ? String(value) : '—';
+      doc.text(v, M+labelWidth, cursorY);
+      cursorY += lineH;
+      doc.setFont(FONT,'bold').setFontSize(10).setTextColor(33);
+    }
+    cursorY += 6;
+  }
+
+  // ======= Cabecera (logo proporcional)
+  (function header(){
+    const top = M;
+    let logoW = 0, logoH = 0;
+
+    if (logoMeta.dataUrl && logoMeta.w > 0 && logoMeta.h > 0){
+      try {
+        const maxH = 56, maxW = 140; // caja de cabecera
+        const scale = Math.min(maxW / logoMeta.w, maxH / logoMeta.h);
+        const w = logoMeta.w * scale;
+        const h = logoMeta.h * scale;
+        doc.addImage(logoMeta.dataUrl, logoMeta.type, W - M - w, top - 4, w, h);
+        logoW = w; logoH = h;
+      } catch(e){}
+    }
+
+    doc.setFont(FONT,'bold').setFontSize(16).setTextColor(17);
+    doc.text('ACTA DE LA JUNTA DE PROPIETARIOS', M, top+16);
+    doc.setFont(FONT,'normal').setFontSize(11).setTextColor(60);
+    doc.text('2ª convocatoria · Doble mayoría (LPH)', M, top+34);
+
+    const blockH = Math.max(logoH, 40);
+    LINE(top + blockH + 10);
+    cursorY = top + blockH + 22;
+  })();
+
+  const footer = ()=>{
+    const n = doc.getNumberOfPages();
+    for (let i=1; i<=n; i++){
+      doc.setPage(i);
+      doc.setFont(FONT,'normal').setFontSize(9).setTextColor(100);
+      doc.text('Generado con Gestor de Votaciones · Local', M, H-16);
+      doc.text(`Página ${i} de ${n}`, W-M, H-16, { align: 'right' });
+    }
+  };
+
+  // ======= KPIs de la UI
+  const presCoef = parseFloat($('kpiPresCoef').textContent)||0;
+  const repCoef  = parseFloat($('kpiRepCoef').textContent)||0;
+  const totCoef  = parseFloat($('kpiTotCoef').textContent)||0;
+  const presProps= parseInt($('kpiPresProps').textContent,10)||0;
+  const repProps = parseInt($('kpiRepProps').textContent,10)||0;
+  const totProps = parseInt($('kpiTotProps').textContent,10)||0;
+  const baseVotes= parseInt($('kpiVotesLPH').textContent,10)||0;
+
+  // Morosos asistentes
+  const morososAsistentes = [];
+  for (const owner of presentOwners){ if (noVoteOwners.has(owner)) morososAsistentes.push({owner, tipo:'Presente'}); }
+  for (const [owner,_rep] of ownerToRep.entries()){
+    if (!presentOwners.has(owner) && noVoteOwners.has(owner)) morososAsistentes.push({owner, tipo:'Representado'});
+  }
+  morososAsistentes.sort((a,b)=>a.owner.localeCompare(b.owner,'es',{sensitivity:'base'}));
+
+  // ======= 1. Datos de la Junta (lista, sin tabla)
+  sectionBlock('1. Datos de la Junta');
+  const fechaTx = meta.fecha ? meta.fecha.split('-').reverse().join('/') : '';
+  const horaTx  = meta.hora  || '';
+  drawKVList([
+    ['Comunidad', meta.comunidad || ''],
+    ['Presidente/a', meta.presidente || ''],
+    ['Junta directiva', meta.junta || ''],
+    ['Secretario/a — Administrador/a', meta.secretario || ''],
+    ['Lugar', meta.lugar || ''],
+    ['Fecha y hora', `${fechaTx}${horaTx?(' · '+horaTx):''}`],
+    ['Carácter', '2ª convocatoria'],
+    ['Reglas', 'Doble mayoría (votos y coeficiente)']
+  ]);
+
+  // ======= 2. Quórum
+  sectionBlock('2. Quórum');
+  autoTablePlain(
+    ['Grupo','Nº propiedades','Coeficiente','% sobre título','Votos LPH'],
+    [
+      ['Presentes',      String(presProps), fmtCoef(presCoef), fmtPct(totalCoefTitulo? presCoef/totalCoefTitulo : 0)+'%', '—'],
+      ['Representados',  String(repProps),  fmtCoef(repCoef),  fmtPct(totalCoefTitulo? repCoef/totalCoefTitulo : 0)+'%', '—'],
+      ['Total (base)',   String(totProps),  fmtCoef(totCoef),  fmtPct(totalCoefTitulo? totCoef/totalCoefTitulo : 0)+'%', String(baseVotes)]
+    ],
+    { columnStyles:{ 1:{halign:'center'}, 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'center'} } }
+  );
+
+  // ======= 3. Resumen de resultados
+  sectionBlock('3. Resumen de resultados');
+  const resumenRows = [];
+  agenda.forEach((p, i)=>{
+    if (!p.resultados){
+      resumenRows.push([`${i+1}. ${p.titulo}`, prettyMaj(p.majority), '—', '—', '—', '—', '—', 'SIN REGISTRO']);
+      return;
+    }
+    const R = p.resultados, base = R.baseCoef;
+    const cell = (v)=> `${v.votes} / ${fmtCoef(v.coef)} / ${pct(v.coef, base)}%`;
+    resumenRows.push([
+      `${i+1}. ${p.titulo}`,
+      prettyMaj(p.majority),
+      cell(R.yes),
+      cell(R.no),
+      cell(R.abst),
+      String(R.baseVotes),
+      fmtCoef(base),
+      (R.aprobado ? 'APROBADO' : 'NO APROBADO')
+    ]);
+  });
+  autoTablePlain(
+    ['Punto','Mayoría','A favor (v/coef/%)','En contra (v/coef/%)','Abst. (v/coef/%)','Base votos','Base coef.','Resultado'],
+    resumenRows,
+    { columnStyles:{ 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'}, 5:{halign:'center'}, 6:{halign:'right'}, 7:{halign:'center'} } }
+  );
+
+  // ======= 4. Propietarios sin derecho a voto
+  sectionBlock('4. Propietarios sin derecho a voto');
+  if (morososAsistentes.length){
+    doc.setFont(FONT,'normal').setFontSize(10).setTextColor(80);
+    doc.text('Listado de asistentes sin derecho a voto por morosidad.', M, cursorY);
+    cursorY += 10;
+    const body = morososAsistentes.map(it=>{
+      const coef = (ownerMap.get(it.owner)||[]).reduce((s,p)=>s+p.coef,0);
+      return [ it.owner, it.tipo, fmtCoef(coef) ];
+    });
+    autoTablePlain(['Titular','Condición','Coeficiente'], body, { columnStyles:{ 2:{halign:'right'} } });
+  } else {
+    doc.setFont(FONT,'normal').setFontSize(10).setTextColor(100);
+    doc.text('No hay asistentes sin derecho a voto.', M, cursorY);
+    cursorY += 16;
+  }
+
+  // ======= 5. Firmas
+  sectionBlock('5. Firmas');
+  doc.setFont(FONT,'normal').setFontSize(10).setTextColor(90);
+  doc.text('Presidente/a: ________________________________', M, cursorY); cursorY += 18;
+  doc.text('Secretario/a-Administrador/a: ________________', M, cursorY); cursorY += 24;
+
+  // ======= Apéndice (detalle por titular y punto) — logo proporcional también
+  doc.addPage(); cursorY = M;
+  (function header2(){
+    let logoW = 0, logoH = 0;
+
+    if (logoMeta.dataUrl && logoMeta.w > 0 && logoMeta.h > 0){
+      try {
+        const maxH = 40, maxW = 120; // un poco más pequeño en apéndice
+        const scale = Math.min(maxW / logoMeta.w, maxH / logoMeta.h);
+        const w = logoMeta.w * scale;
+        const h = logoMeta.h * scale;
+        doc.addImage(logoMeta.dataUrl, logoMeta.type, W - M - w, M - 6, w, h);
+        logoW = w; logoH = h;
+      } catch(e){}
+    }
+
+    doc.setFont(FONT,'bold').setFontSize(14).setTextColor(17);
+    doc.text('Apéndice. Detalle nominal por punto', M, M+14);
+    LINE(M + Math.max(logoH, 32) + 6);
+    cursorY = M + Math.max(logoH, 32) + 18;
+  })();
+
+  const units = buildVotingUnits();
+
+  agenda.forEach((p, idx)=>{
+    sectionBlock(`${idx+1}. ${p.titulo}`);
+    const mapProp = puntoVotosPorProp.get(p.id) || new Map();
+    const rows = [];
+
+    units.forEach(u=>{
+      const props = (ownerMap.get(u.owner)||[]).map(x=>x.propiedad_id).filter(pid=>propToAgent.has(pid));
+      if (!props.length) return;
+      let voto = 'abs';
+      if (u.eligible){
+        for (const pid of props){ const v = mapProp.get(pid); if (v){ voto = v; break; } }
+      }
+      const tipo   = (u.mode==='representado') ? 'Representado' : 'Presente';
+      const agente = (u.mode==='representado') ? u.agent : u.owner;
+      const titularRep = (u.mode==='representado') ? u.owner : '';
+      const moroso = noVoteOwners.has(u.owner) ? 'Sí' : 'No';
+      const votoTx = noVoteOwners.has(u.owner)
+        ? (voto==='si'?'A favor':'En contra') + ' (SIN VOTO)'
+        : (voto==='si'?'A favor': (voto==='no'?'En contra':'Abstención'));
+
+      rows.push([agente, titularRep || '-', tipo, moroso, String(u.nProps), fmtCoef(u.coef), votoTx]);
+    });
+
+    if (!rows.length){
+      doc.setFont(FONT,'normal').setFontSize(10).setTextColor(120);
+      doc.text('Sin titulares en este punto.', M, cursorY);
+      cursorY += 12;
+    } else {
+      autoTablePlain(
+        ['Agente','Titular representado','Tipo','Moroso','Nº props','Coeficiente','Voto'],
+        rows,
+        { columnStyles:{ 4:{halign:'center'}, 5:{halign:'right'} } }
+      );
+    }
+    if (cursorY > H-120){ doc.addPage(); cursorY = M; }
+  });
+
+  // ======= Anexos (índice)
+  if (anexos.length){
+    sectionBlock('Anexos (índice)');
+    const body = anexos.map((a,i)=> [ String(i+1), a.name, a.kind.toUpperCase() ]);
+    autoTablePlain(['#','Nombre','Tipo'], body, { columnStyles:{ 0:{halign:'center'} } });
+  }
+
+  // Guardado simple o fusión con anexos
+  const mainBytes = doc.output('arraybuffer');
+  footer();
+  if (!anexos.length){
+    doc.save('acta_votacion.pdf');
+  } else {
+    mergeActaWithAnexos(mainBytes, anexos)
+      .then((blob)=> downloadBlob(blob, 'acta_votacion.pdf'))
+      .catch((e)=>{ console.error(e); alert('No se pudo fusionar anexos.'); });
+  }
+}
+
+// ========= Backup
+function exportBackupJSON(){
+  const payload={
+    censo, totalCoefTitulo, hojasLeidas,
+    presentOwners:[...presentOwners], presentReps:[...presentReps],
+    repToOwners:[...repToOwners.entries()].map(([k,v])=>[k,[...v]]),
+    ownerToRep:[...ownerToRep.entries()],
+    noVoteOwners:[...noVoteOwners],
+    registroBloqueado, agenda,
+    propToAgent:[...propToAgent.entries()],
+    puntoVotosPorProp:[...puntoVotosPorProp.entries()].map(([pid,mp])=>[pid,[...mp.entries()]])
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='backup_junta.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function importBackupJSON(ev){
+  const f=ev.target.files?.[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const data=JSON.parse(rd.result);
+      censo=data.censo||[]; totalCoefTitulo=data.totalCoefTitulo||0; hojasLeidas=data.hojasLeidas||0;
+      propIndex=new Map(); for(const r of censo){ propIndex.set(r.propiedad_id,r); }
+      ownerMap=new Map(); for(const r of censo){ if(!ownerMap.has(r.propietario)) ownerMap.set(r.propietario,[]); ownerMap.get(r.propietario).push({propiedad_id:r.propiedad_id, coef:r.coef}); }
+      rebuildOwnerNormIndex();
+
+      presentOwners=new Set(data.presentOwners||[]); presentReps=new Set(data.presentReps||[]);
+      repToOwners=new Map((data.repToOwners||[]).map(([k,a])=>[k,new Set(a)])); ownerToRep=new Map(data.ownerToRep||[]);
+      noVoteOwners=new Set(data.noVoteOwners||[]);
+      registroBloqueado=!!data.registroBloqueado; agenda=data.agenda||[];
+      propToAgent=new Map(data.propToAgent||[]);
+      puntoVotosPorProp=new Map((data.puntoVotosPorProp||[]).map(([pid,arr])=>[pid,new Map(arr)]));
+
+      $('statusCenso').textContent=censo.length?'Censo cargado (backup)':'Censo no cargado';
+      $('censoInfo').innerHTML=censo.length?`Censo (backup): <strong>${censo.length}</strong> propiedades · coef. total: <strong>${fmtCoef(totalCoefTitulo)}</strong> · hojas: <strong>${hojasLeidas}</strong>.`:'Cargue censo.';
+      $('morososInfo').innerHTML = noVoteOwners.size? `Morosos (backup): <strong>${noVoteOwners.size}</strong> titulares sin voto.` : 'Sin morosos cargados.';
+
+      actualizarSelectPropietarios(); renderListasRegistro(); renderListaPuntos(); recalcularKPIs();
+      if (registroBloqueado){ $('configPuntos').classList.add('hidden'); renderTarjetasVotacion(); renderResumenFinal(); }
+      else { $('configPuntos').classList.remove('hidden'); $('seccionVotacion').innerHTML=''; $('resumenTabla').innerHTML=''; }
+      alert('Copia restaurada correctamente.');
+    }catch(e){ alert('Backup inválido.'); }
+  };
+  rd.readAsText(f);
+}
+
+// ========= Utilidades PDF: descarga y merge anexos
+function downloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+async function mergeActaWithAnexos(mainArrayBuffer, anexosList){
+  const { PDFDocument } = PDFLib;
+
+  const merged = await PDFDocument.create();
+
+  // Cargar acta y copiar sus páginas
+  const acta = await PDFDocument.load(mainArrayBuffer);
+  const actaPages = await merged.copyPages(acta, acta.getPageIndices());
+  actaPages.forEach(p=>merged.addPage(p));
+
+  // A4 en puntos
+  const A4 = { w: 595.28, h: 841.89 };
+  const margin = 40;
+
+  // Añadir anexos
+  for (const a of anexosList){
+    if (a.kind === 'pdf'){
+      const bytes = await a.file.arrayBuffer();
+      const src = await PDFDocument.load(bytes);
+      const pages = await merged.copyPages(src, src.getPageIndices());
+      pages.forEach(p=>merged.addPage(p));
+    } else if (a.kind === 'image'){
+      const bytes = await a.file.arrayBuffer();
+      const isPng = a.file.type.includes('png');
+      const img = isPng ? await merged.embedPng(bytes) : await merged.embedJpg(bytes);
+      const iw = img.width, ih = img.height;
+      const maxW = A4.w - 2*margin, maxH = A4.h - 2*margin;
+      const scale = Math.min(maxW/iw, maxH/ih);
+      const w = iw*scale, h = ih*scale;
+      const page = merged.addPage([A4.w, A4.h]);
+      page.drawImage(img, { x:(A4.w-w)/2, y:(A4.h-h)/2, width:w, height:h });
+      page.drawText(`Anexo: ${a.name}`, { x: margin, y: margin/2, size: 9 });
+    }
+  }
+
+  const mergedBytes = await merged.save();
+  return new Blob([mergedBytes], { type:'application/pdf' });
+}
+// ===== Asignar REPRESENTANTE a varios (Modal)
+function openAsignarRepModal(){
+  const m = $('asignarRepModal');
+  m.classList.add('show'); m.classList.remove('hidden');
+
+  // Reiniciar selección al abrir (si quieres mantener selección entre aperturas, comenta esta línea)
+  asigRepSelected = new Set();
+
+  // Prefill del último representante usado (si existe)
+  $('asigRepNombre').value = sessionStorage.getItem('lastRepName') || '';
+
+  // Reset opciones y filtros
+  $('asigRepReemplazar').checked = true;
+  $('asigRepIncluirMorosos').checked = false;
+  $('asigRepSoloNoAsignados').checked = false;
+  $('asigRepFiltro').value = '';
+
+  // Pintar lista inicial
+  renderAsignarRepLista();
+
+  // Listener delegado para mantener la selección aunque se re-renderice la lista
+  const cont = $('asigRepLista');
+  cont.onchange = (e)=>{
+    const el = e.target;
+    if (!el || !el.classList?.contains('asigRepCheck')) return;
+    const owner = el.getAttribute('data-owner');
+    if (!owner) return;
+    if (el.checked) asigRepSelected.add(owner);
+    else asigRepSelected.delete(owner);
+  };
+}
+
+
+function closeAsignarRepModal(){
+  const m = $('asignarRepModal');
+  m.classList.remove('show'); m.classList.add('hidden');
+}
+
+function renderAsignarRepLista(){
+  const cont = $('asigRepLista');
+  const filtro = norm($('asigRepFiltro').value);
+  const incluirMorosos = $('asigRepIncluirMorosos').checked;
+
+  const repActual = $('asigRepNombre').value.trim();
+  const soloNoAsignados = $('asigRepSoloNoAsignados').checked;
+
+  const items = [];
+  for (const owner of ownerMap.keys()){
+    // solo NO presentes
+    if (presentOwners.has(owner)) continue;
+
+    // filtro por texto
+    if (filtro && !norm(owner).includes(filtro)) continue;
+
+    const esMoroso = noVoteOwners.has(owner);
+    if (!incluirMorosos && esMoroso) continue;
+
+    const yaRep = ownerToRep.has(owner);
+    const repName = yaRep ? ownerToRep.get(owner) : null;
+
+    // si marcamos "solo no asignados a este representante", oculta los que ya lo tienen
+    if (soloNoAsignados && repActual && repName === repActual) continue;
+
+    const coef = (ownerMap.get(owner) || []).reduce((s,p)=>s+p.coef,0);
+    items.push({ owner, esMoroso, yaRep, repName, coef });
+  }
+
+  if (!items.length){
+    cont.innerHTML = '<div class="text-sm text-gray-500">No hay propietarios para mostrar con los filtros actuales.</div>';
+    return;
+  }
+
+  cont.innerHTML = items.map(it=>`
+    <label class="flex items-center justify-between gap-2 bg-white border border-gray-200 rounded-lg p-2 mb-2">
+      <div class="flex items-center gap-3">
+        <input
+  type="checkbox"
+  class="asigRepCheck"
+  data-owner="${it.owner.replace(/"/g,'&quot;')}"
+  ${asigRepSelected.has(it.owner) ? 'checked' : ''}
+/>
+
+        <div>
+          <div class="font-medium ${it.esMoroso ? 'text-rose-700' : ''}">
+            ${it.owner}
+            ${it.esMoroso ? '<span class="badge badge-warn ml-2" title="Sin derecho a voto">SIN VOTO</span>' : ''}
+          </div>
+          <div class="text-xs text-gray-600">
+            Coef.: ${fmtCoef(it.coef)} ${it.yaRep ? `· Representado por: ${it.repName}` : ''}
+          </div>
+        </div>
+      </div>
+    </label>
+  `).join('');
+}
+
+function confirmarAsignarRep(){
+  const rep = $('asigRepNombre').value.trim();
+  const reemplazar = $('asigRepReemplazar').checked;
+  const incluirMorosos = $('asigRepIncluirMorosos').checked;
+  if (!rep){ alert('Indique el nombre del representante.'); return; }
+
+  // Guardar este representante para próximos usos
+  sessionStorage.setItem('lastRepName', rep);
+
+  // Recoger seleccionados (vía Set)
+  const selectedOwners = Array.from(asigRepSelected);
+  if (!selectedOwners.length){
+    alert('Seleccione al menos un propietario.'); return;
+  }
+
+  for (const owner of selectedOwners){
+    if (!owner) continue;
+    if (presentOwners.has(owner)) continue;
+    if (!incluirMorosos && noVoteOwners.has(owner)) continue;
+
+    if (reemplazar){
+      setRepresentacion(rep, owner);
+    } else {
+      if (ownerToRep.has(owner)) continue;
+      addRepresentacion(rep, owner);
+    }
+  }
+
+  // Asegurar representante como presente
+  presentReps.add(rep);
+
+  // Limpiar selección del modal y refrescar
+  asigRepSelected.clear();
+  renderAsignarRepLista();
+  renderListasRegistro();
+  recalcularKPIs();
+  closeAsignarRepModal();
+}
+
+function openConvocatoriaModal(){
+  const m = $('convocatoriaModal');
+  // preseleccionar último valor si existiera
+  const last = sessionStorage.getItem('convocatoria');
+  const radios = m.querySelectorAll('input[name="convSel"]');
+  radios.forEach(r => r.checked = (r.value === last) || (!last && r.value==='primera'));
+  $('convocatoriaWarn').classList.add('hidden');
+  m.classList.add('show'); m.classList.remove('hidden');
+}
+
+function closeConvocatoriaModal(){
+  const m = $('convocatoriaModal');
+  m.classList.remove('show'); m.classList.add('hidden');
+}
+
+function confirmarConvocatoriaYComenzar(){
+  const m = $('convocatoriaModal');
+  const sel = m.querySelector('input[name="convSel"]:checked')?.value || 'primera';
+  convocatoriaActual = sel;
+  sessionStorage.setItem('convocatoria', sel);
+
+  if (sel === CONVOCATORIA.PRIMERA){
+    const q = checkQuorumPrimera();
+    if (!q.ok){
+      const pctOwners = ((q.ownersConc / Math.max(1,q.ownersTot)) * 100).toFixed(1);
+      const pctCoef   = ((q.coefConc / Math.max(1,q.coefTot)) * 100).toFixed(1);
+      const msg = `No se cumple el quórum de constitución en primera convocatoria.
+      Propietarios: ${q.ownersConc}/${q.ownersTot} (${pctOwners}%)
+      Coeficientes: ${pctCoef}% del total.`;
+      const warn = $('convocatoriaWarn');
+      warn.textContent = msg;
+      warn.classList.remove('hidden');
+      return; // no continuar
+    }
+  }
+
+  closeConvocatoriaModal();
+  // ⇩⇩ Continuar con el flujo de inicio de votación / bloqueo de registro
+  continuarInicioVotacionTrasConvocatoria();
+}
+
+// Adaptador: llama a tu flujo existente para iniciar votación/bloquear registro
+function continuarInicioVotacionTrasConvocatoria(){
+  // Si tienes una función específica:
+  if (typeof bloquearRegistro === 'function'){ bloquearRegistro(); return; }
+  if (typeof iniciarVotacion === 'function'){ iniciarVotacion(); return; }
+
+  // Fallback genérico (por si tu flujo es con flags + renders)
+  try{
+    registroBloqueado = true;
+    renderListasRegistro?.();
+    renderTarjetasVotacion?.();
+    recalcularKPIs?.();
+  }catch(e){
+    console.warn('No se pudo continuar automáticamente. Engancha aquí tu función de iniciar votación/bloqueo.');
+  }
+}
+
+window.addEventListener('DOMContentLoaded', init);
+</script>
+
+<script>
+// Registro del Service Worker (PWA)
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js')
+      .catch(err => console.error('SW registration failed:', err));
+  });
+}
+</script>
+
+</body>
+</html>
